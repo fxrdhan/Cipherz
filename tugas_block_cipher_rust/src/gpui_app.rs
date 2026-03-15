@@ -1,18 +1,16 @@
 use std::ops::Range;
 
 use gpui::{
-    actions, App, Application, Bounds, ClipboardItem, ClickEvent, Context, CursorStyle,
-    ElementId, ElementInputHandler, Entity, EntityInputHandler, FocusHandle, Focusable,
-    GlobalElementId, Hsla, KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, PaintQuad, Pixels, Point, ShapedLine, SharedString, StatefulInteractiveElement,
-    Style, TextRun, UTF16Selection, UnderlineStyle, Window, WindowBounds, WindowOptions, Div,
-    div, fill, point, prelude::*, px, relative, rgb, rgba, size, white,
+    App, Application, Bounds, ClickEvent, ClipboardItem, Context, CursorStyle, Div, ElementId,
+    ElementInputHandler, Entity, EntityInputHandler, FocusHandle, Focusable, GlobalElementId, Hsla,
+    KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
+    Pixels, Point, ShapedLine, SharedString, StatefulInteractiveElement, Style, TextRun,
+    UTF16Selection, UnderlineStyle, Window, WindowBounds, WindowOptions, actions, div, fill, point,
+    prelude::*, px, relative, rgb, rgba, size, white,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::{
-    decrypt_message, derive_bytes, encrypt_message, CipherMode, BLOCK_SIZE, KEY_SIZE,
-};
+use crate::{BLOCK_SIZE, CipherMode, KEY_SIZE, decrypt_message, derive_bytes, encrypt_message};
 
 actions!(
     block_cipher_text_input,
@@ -43,29 +41,24 @@ enum UiTab {
 struct ModeOption {
     mode: CipherMode,
     title: &'static str,
-    detail: &'static str,
 }
 
 const MODE_OPTIONS: [ModeOption; 4] = [
     ModeOption {
         mode: CipherMode::Cbc,
         title: "CBC",
-        detail: "PKCS#7 padding for block-sized output",
     },
     ModeOption {
         mode: CipherMode::Cfb,
         title: "CFB",
-        detail: "Feedback stream mode, no padding",
     },
     ModeOption {
         mode: CipherMode::Ofb,
         title: "OFB",
-        detail: "Output feedback stream mode",
     },
     ModeOption {
         mode: CipherMode::Ctr,
         title: "CTR",
-        detail: "Counter mode with incrementing nonce",
     },
 ];
 
@@ -87,13 +80,13 @@ struct TextInputStyle {
 impl TextInputStyle {
     fn dark() -> Self {
         Self {
-            background: rgb(0xFBF7F0).into(),
-            border: rgb(0xD8CDBA).into(),
-            border_focus: rgb(0x0F766E).into(),
-            text: rgb(0x1E293B).into(),
-            placeholder: rgba(0x1E293B66).into(),
-            selection: rgba(0x0F766E33).into(),
-            cursor: rgb(0x0F766E).into(),
+            background: rgb(0xFFFFFF).into(),
+            border: rgb(0x8A8A8A).into(),
+            border_focus: rgb(0x000000).into(),
+            text: rgb(0x000000).into(),
+            placeholder: rgba(0x00000066).into(),
+            selection: rgba(0x00000022).into(),
+            cursor: rgb(0x000000).into(),
         }
     }
 }
@@ -271,7 +264,8 @@ impl TextInput {
             return 0;
         }
 
-        let (Some(bounds), Some(line)) = (self.last_bounds.as_ref(), self.last_layout.as_ref()) else {
+        let (Some(bounds), Some(line)) = (self.last_bounds.as_ref(), self.last_layout.as_ref())
+        else {
             return 0;
         };
         if position.y < bounds.top() {
@@ -641,7 +635,9 @@ impl Element for TextInputElement {
         line.paint(bounds.origin, window.line_height(), window, cx)
             .expect("paint text input line");
 
-        if focus_handle.is_focused(window) && let Some(cursor) = prepaint.cursor.take() {
+        if focus_handle.is_focused(window)
+            && let Some(cursor) = prepaint.cursor.take()
+        {
             window.paint_quad(cursor);
         }
 
@@ -685,7 +681,7 @@ impl Render for TextInput {
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .border_1()
             .border_color(border_color)
-            .rounded_lg()
+            .rounded_none()
             .bg(self.style.background)
             .line_height(px(22.))
             .text_size(px(16.))
@@ -717,16 +713,16 @@ struct BlockCipherApp {
 
 impl BlockCipherApp {
     fn new(window: &Window, cx: &mut Context<Self>) -> Self {
-        let encrypt_key = TextInput::new(window, cx, "16-char key, contoh: KAMSIS-KEY-2026!");
-        let encrypt_iv = TextInput::new(window, cx, "8-char IV / nonce, contoh: IV2026!!");
-        let encrypt_plaintext = TextInput::new(window, cx, "Tulis plaintext di sini");
-        let decrypt_key = TextInput::new(window, cx, "16-char key for decryption");
-        let decrypt_iv = TextInput::new(window, cx, "8-char IV / nonce");
-        let decrypt_ciphertext = TextInput::new(window, cx, "Ciphertext hex hasil enkripsi");
+        let encrypt_key = TextInput::new(window, cx, "Key");
+        let encrypt_iv = TextInput::new(window, cx, "IV / nonce");
+        let encrypt_plaintext = TextInput::new(window, cx, "Plaintext");
+        let decrypt_key = TextInput::new(window, cx, "Key");
+        let decrypt_iv = TextInput::new(window, cx, "IV / nonce");
+        let decrypt_ciphertext = TextInput::new(window, cx, "Ciphertext (hex)");
 
         encrypt_key.update(cx, |input, cx| input.set_value(DEMO_KEY, cx));
         encrypt_iv.update(cx, |input, cx| input.set_value(DEMO_IV, cx));
-        encrypt_plaintext.update(cx, |input, cx| input.set_value("halo dunia", cx));
+        encrypt_plaintext.update(cx, |input, cx| input.set_value("hello", cx));
         decrypt_key.update(cx, |input, cx| input.set_value(DEMO_KEY, cx));
         decrypt_iv.update(cx, |input, cx| input.set_value(DEMO_IV, cx));
 
@@ -741,7 +737,7 @@ impl BlockCipherApp {
             decrypt_ciphertext,
             encrypt_result: String::new(),
             decrypt_result: String::new(),
-            status: "Siap. Pilih mode lalu enkripsi atau dekripsi.".to_string(),
+            status: "Ready".to_string(),
             demo_rows: build_demo_rows(),
         }
     }
@@ -766,16 +762,14 @@ impl BlockCipherApp {
         let encrypted = encrypt_message(self.selected_mode, plaintext.as_bytes(), &key, &iv);
 
         self.encrypt_result = hex_string(&encrypted);
-        self.decrypt_ciphertext
-            .update(cx, |input, cx| input.set_value(self.encrypt_result.clone(), cx));
+        self.decrypt_ciphertext.update(cx, |input, cx| {
+            input.set_value(self.encrypt_result.clone(), cx)
+        });
         self.decrypt_key
             .update(cx, |input, cx| input.set_value(key_text, cx));
         self.decrypt_iv
             .update(cx, |input, cx| input.set_value(iv_text, cx));
-        self.status = format!(
-            "Enkripsi {} berhasil. Ciphertext siap dipakai di tab decrypt.",
-            self.selected_mode.name()
-        );
+        self.status = format!("Encrypted with {}", self.selected_mode.name());
         cx.notify();
     }
 
@@ -786,7 +780,7 @@ impl BlockCipherApp {
 
         let Some(ciphertext) = hex_to_bytes(&ciphertext_text) else {
             self.decrypt_result.clear();
-            self.status = "Ciphertext hex tidak valid.".to_string();
+            self.status = "Invalid hex input".to_string();
             cx.notify();
             return;
         };
@@ -795,30 +789,29 @@ impl BlockCipherApp {
         let iv = derive_bytes::<BLOCK_SIZE>(&iv_text);
         let Some(plaintext) = decrypt_message(self.selected_mode, &ciphertext, &key, &iv) else {
             self.decrypt_result.clear();
-            self.status = "Dekripsi gagal. Periksa mode, key, IV, atau padding CBC.".to_string();
+            self.status = "Decrypt failed".to_string();
             cx.notify();
             return;
         };
 
         self.decrypt_result = String::from_utf8_lossy(&plaintext).into_owned();
-        self.status = format!(
-            "Dekripsi {} berhasil. Plaintext dipulihkan.",
-            self.selected_mode.name()
-        );
+        self.status = format!("Decrypted with {}", self.selected_mode.name());
         cx.notify();
     }
 
     fn clear_encrypt(&mut self, _: &ClickEvent, _window: &mut Window, cx: &mut Context<Self>) {
-        self.encrypt_plaintext.update(cx, |input, cx| input.clear(cx));
+        self.encrypt_plaintext
+            .update(cx, |input, cx| input.clear(cx));
         self.encrypt_result.clear();
-        self.status = "Form encrypt dibersihkan.".to_string();
+        self.status = "Encrypt form cleared".to_string();
         cx.notify();
     }
 
     fn clear_decrypt(&mut self, _: &ClickEvent, _window: &mut Window, cx: &mut Context<Self>) {
-        self.decrypt_ciphertext.update(cx, |input, cx| input.clear(cx));
+        self.decrypt_ciphertext
+            .update(cx, |input, cx| input.clear(cx));
         self.decrypt_result.clear();
-        self.status = "Form decrypt dibersihkan.".to_string();
+        self.status = "Decrypt form cleared".to_string();
         cx.notify();
     }
 
@@ -833,7 +826,7 @@ impl BlockCipherApp {
             .update(cx, |input, cx| input.set_value(DEMO_KEY, cx));
         self.decrypt_iv
             .update(cx, |input, cx| input.set_value(DEMO_IV, cx));
-        self.status = "Demo seed dimuat ke semua field.".to_string();
+        self.status = "Demo values loaded".to_string();
         cx.notify();
     }
 
@@ -845,15 +838,25 @@ impl BlockCipherApp {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let active = self.active_tab == tab;
-        let bg: Hsla = if active { rgb(0x0F766E).into() } else { rgba(0xFFFFFF11).into() };
-        let fg: Hsla = if active { white() } else { rgba(0xF8FAFCDD).into() };
+        let bg: Hsla = if active {
+            rgb(0x000000).into()
+        } else {
+            rgb(0xFFFFFF).into()
+        };
+        let fg: Hsla = if active {
+            white()
+        } else {
+            rgb(0x000000).into()
+        };
+        let border: Hsla = rgb(0x000000).into();
 
         div()
             .id(id)
             .cursor_pointer()
             .px_4()
             .py_2()
-            .rounded_full()
+            .border_1()
+            .border_color(border)
             .bg(bg)
             .text_color(fg)
             .font_weight(gpui::FontWeight::SEMIBOLD)
@@ -861,16 +864,20 @@ impl BlockCipherApp {
             .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| view.set_tab(tab, cx)))
     }
 
-    fn render_mode_chip(
-        &self,
-        option: &ModeOption,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    fn render_mode_chip(&self, option: &ModeOption, cx: &mut Context<Self>) -> impl IntoElement {
         let mode = option.mode;
         let active = self.selected_mode == mode;
-        let bg: Hsla = if active { rgb(0xF59E0B).into() } else { rgba(0xF8FAFC14).into() };
-        let fg: Hsla = if active { rgb(0x1F2937).into() } else { white() };
-        let border: Hsla = if active { rgb(0xFCD34D).into() } else { rgba(0xF8FAFC24).into() };
+        let bg: Hsla = if active {
+            rgb(0x000000).into()
+        } else {
+            rgb(0xFFFFFF).into()
+        };
+        let fg: Hsla = if active {
+            white()
+        } else {
+            rgb(0x000000).into()
+        };
+        let border: Hsla = rgb(0x000000).into();
         let id = match mode {
             CipherMode::Cbc => "mode-cbc",
             CipherMode::Cfb => "mode-cfb",
@@ -883,48 +890,50 @@ impl BlockCipherApp {
             .cursor_pointer()
             .flex()
             .flex_col()
-            .gap_1()
-            .w(px(180.))
+            .justify_center()
+            .items_center()
+            .w(px(120.))
+            .h(px(44.))
             .p_3()
-            .rounded_xl()
             .border_1()
             .border_color(border)
             .bg(bg)
             .text_color(fg)
-            .child(div().font_weight(gpui::FontWeight::BOLD).child(option.title))
-            .child(div().text_sm().opacity(0.85).child(option.detail))
+            .child(
+                div()
+                    .font_weight(gpui::FontWeight::BOLD)
+                    .child(option.title),
+            )
             .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| view.set_mode(mode, cx)))
     }
 
-    fn render_result_card(&self, title: &str, body: &str, accent: Hsla) -> impl IntoElement {
+    fn render_result_card(&self, title: &str, body: &str) -> impl IntoElement {
         div()
             .flex()
             .flex_col()
             .gap_2()
             .w_full()
             .p_4()
-            .rounded_xl()
             .border_1()
-            .border_color(rgba(0xFFFFFF16))
-            .bg(rgba(0xFFFFFF0A))
+            .border_color(rgb(0x000000))
+            .bg(rgb(0xFFFFFF))
             .child(
                 div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(div().size_3().rounded_full().bg(accent))
-                    .child(div().font_weight(gpui::FontWeight::BOLD).child(title.to_string())),
+                    .font_weight(gpui::FontWeight::BOLD)
+                    .text_color(rgb(0x000000))
+                    .child(title.to_string()),
             )
             .child(
                 div()
                     .p_3()
-                    .rounded_lg()
-                    .bg(rgb(0xF8FAFC))
-                    .text_color(rgb(0x0F172A))
+                    .border_1()
+                    .border_color(rgb(0x000000))
+                    .bg(rgb(0xFFFFFF))
+                    .text_color(rgb(0x000000))
                     .text_sm()
                     .min_h(px(88.))
                     .child(if body.is_empty() {
-                        "Belum ada hasil".to_string()
+                        "-".to_string()
                     } else {
                         body.to_string()
                     }),
@@ -945,21 +954,17 @@ impl BlockCipherApp {
                     .flex()
                     .gap_3()
                     .child(
-                        action_button("Encrypt Now", rgb(0x0F766E).into())
+                        action_button("Encrypt", rgb(0x000000).into())
                             .id("encrypt-now")
                             .on_click(cx.listener(Self::encrypt_now)),
                     )
                     .child(
-                        action_button("Clear", rgb(0x475569).into())
+                        action_button("Clear", rgb(0xFFFFFF).into())
                             .id("encrypt-clear")
                             .on_click(cx.listener(Self::clear_encrypt)),
                     ),
             )
-            .child(self.render_result_card(
-                "Ciphertext Hex",
-                &self.encrypt_result,
-                rgb(0xF59E0B).into(),
-            ))
+            .child(self.render_result_card("Ciphertext", &self.encrypt_result))
     }
 
     fn render_decrypt_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -976,21 +981,17 @@ impl BlockCipherApp {
                     .flex()
                     .gap_3()
                     .child(
-                        action_button("Decrypt Now", rgb(0xB45309).into())
+                        action_button("Decrypt", rgb(0x000000).into())
                             .id("decrypt-now")
                             .on_click(cx.listener(Self::decrypt_now)),
                     )
                     .child(
-                        action_button("Clear", rgb(0x475569).into())
+                        action_button("Clear", rgb(0xFFFFFF).into())
                             .id("decrypt-clear")
                             .on_click(cx.listener(Self::clear_decrypt)),
                     ),
             )
-            .child(self.render_result_card(
-                "Recovered Plaintext",
-                &self.decrypt_result,
-                rgb(0x0EA5E9).into(),
-            ))
+            .child(self.render_result_card("Plaintext", &self.decrypt_result))
     }
 
     fn render_demo_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1005,20 +1006,20 @@ impl BlockCipherApp {
                     .justify_between()
                     .items_center()
                     .p_4()
-                    .rounded_xl()
-                    .bg(rgba(0xFFFFFF0B))
+                    .bg(rgb(0xFFFFFF))
                     .border_1()
-                    .border_color(rgba(0xFFFFFF14))
+                    .border_color(rgb(0x000000))
                     .child(
                         div()
                             .flex()
                             .flex_col()
                             .gap_1()
-                            .child(div().font_weight(gpui::FontWeight::BOLD).child("Demo data"))
-                            .child(div().text_sm().opacity(0.8).child(DEMO_PLAINTEXT)),
+                            .text_color(rgb(0x000000))
+                            .child(div().font_weight(gpui::FontWeight::BOLD).child("Demo"))
+                            .child(div().text_sm().child(DEMO_PLAINTEXT)),
                     )
                     .child(
-                        action_button("Load Demo Seed", rgb(0x0F766E).into())
+                        action_button("Load", rgb(0x000000).into())
                             .id("load-demo-seed")
                             .on_click(cx.listener(Self::load_demo_seed)),
                     ),
@@ -1029,17 +1030,16 @@ impl BlockCipherApp {
                     .flex_col()
                     .gap_2()
                     .p_4()
-                    .rounded_xl()
-                    .bg(rgba(0xFFFFFF08))
+                    .bg(rgb(0xFFFFFF))
                     .border_1()
-                    .border_color(rgba(0xFFFFFF12))
+                    .border_color(rgb(0x000000))
+                    .text_color(rgb(0x000000))
                     .child(
                         div()
                             .flex()
                             .justify_between()
                             .items_center()
-                            .child(div().font_weight(gpui::FontWeight::BOLD).child(mode.name()))
-                            .child(div().text_sm().opacity(0.75).child("Verified against C version")),
+                            .child(div().font_weight(gpui::FontWeight::BOLD).child(mode.name())),
                     )
                     .child(result_line("Ciphertext", cipher))
                     .child(result_line("Decrypt", plain))
@@ -1057,133 +1057,121 @@ impl Render for BlockCipherApp {
 
         div()
             .size_full()
-            .bg(rgb(0x08121B))
-            .text_color(white())
+            .bg(rgb(0xFFFFFF))
+            .text_color(rgb(0x000000))
             .child(
                 div()
                     .id("app-scroll")
                     .size_full()
                     .overflow_y_scroll()
                     .child(
-                        div()
-                            .w_full()
-                            .flex()
-                            .flex_col()
-                            .child(
-                                div()
-                                    .w_full()
-                                    .p_6()
-                                    .bg(rgb(0x0F172A))
-                                    .child(
-                                        div()
-                                            .max_w(px(1120.))
-                                            .mx_auto()
-                                            .flex()
-                                            .flex_col()
-                                            .gap_5()
-                                            .child(
-                                                div()
-                                                    .flex()
-                                                    .justify_between()
-                                                    .items_start()
-                                                    .gap_4()
-                                                    .child(
-                                                        div()
-                                                            .flex()
-                                                            .flex_col()
-                                                            .gap_2()
-                                                            .child(
-                                                                div()
-                                                                    .text_sm()
-                                                                    .text_color(rgb(0xFBBF24))
-                                                                    .child("Native GPUI Desktop"),
-                                                            )
-                                                            .child(
-                                                                div()
-                                                                    .text_size(px(42.))
-                                                                    .font_weight(gpui::FontWeight::BLACK)
-                                                                    .child("Block Cipher Workbench"),
-                                                            )
-                                                            .child(
-                                                                div()
-                                                                    .max_w(px(620.))
-                                                                    .text_lg()
-                                                                    .opacity(0.85)
-                                                                    .child(
-                                                                        "UI native untuk eksplorasi mode CBC, CFB, OFB, dan CTR pada implementasi Rust yang ekuivalen dengan versi C.",
-                                                                    ),
-                                                            ),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .flex()
-                                                            .flex_col()
-                                                            .gap_2()
-                                                            .p_4()
-                                                            .rounded_xl()
-                                                            .bg(rgba(0xFFFFFF0B))
-                                                            .border_1()
-                                                            .border_color(rgba(0xFFFFFF16))
-                                                            .child(div().text_sm().opacity(0.7).child("Block size"))
-                                                            .child(div().text_2xl().font_weight(gpui::FontWeight::BOLD).child("64-bit"))
-                                                            .child(div().text_sm().opacity(0.7).child("Key size 128-bit | 8 rounds")),
-                                                    ),
-                                            )
-                                            .child(
-                                                div()
-                                                    .flex()
-                                                    .gap_3()
-                                                    .children([
-                                                        self.render_tab_button("tab-encrypt", "Encrypt", UiTab::Encrypt, cx).into_any_element(),
-                                                        self.render_tab_button("tab-decrypt", "Decrypt", UiTab::Decrypt, cx).into_any_element(),
-                                                        self.render_tab_button("tab-demo", "Demo", UiTab::Demo, cx).into_any_element(),
-                                                    ]),
-                                            )
-                                            .child(
-                                                div()
-                                                    .flex()
-                                                    .gap_3()
-                                                    .flex_wrap()
-                                                    .children(MODE_OPTIONS.iter().map(|option| {
-                                                        self.render_mode_chip(option, cx).into_any_element()
-                                                    })),
-                                            )
-                                            .child(
-                                                div()
-                                                    .p_4()
-                                                    .rounded_xl()
-                                                    .bg(rgba(0x0F766E33))
-                                                    .border_1()
-                                                    .border_color(rgba(0x2DD4BF55))
-                                                    .text_sm()
-                                                    .child(self.status.clone()),
-                                            ),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .w_full()
-                                    .p_6()
-                                    .child(
-                                        div()
-                                            .max_w(px(1120.))
-                                            .mx_auto()
-                                            .child(panel),
-                                    ),
-                            ),
-                    ),
+                    div()
+                        .w_full()
+                        .flex()
+                        .flex_col()
+                        .child(
+                            div()
+                                .w_full()
+                                .p_6()
+                                .bg(rgb(0xFFFFFF))
+                                .border_b_1()
+                                .border_color(rgb(0x000000))
+                                .child(
+                                    div()
+                                        .max_w(px(1120.))
+                                        .mx_auto()
+                                        .flex()
+                                        .flex_col()
+                                        .gap_4()
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .justify_between()
+                                                .items_start()
+                                                .gap_4()
+                                                .child(
+                                                    div()
+                                                        .flex()
+                                                        .flex_col()
+                                                        .gap_1()
+                                                        .child(
+                                                            div()
+                                                                .text_size(px(28.))
+                                                                .font_weight(gpui::FontWeight::BOLD)
+                                                                .child("Block Cipher"),
+                                                        )
+                                                        .child(div().text_sm().child(
+                                                            "64-bit block | 128-bit key | 8 rounds",
+                                                        )),
+                                                ),
+                                        )
+                                        .child(
+                                            div().flex().gap_3().children([
+                                                self.render_tab_button(
+                                                    "tab-encrypt",
+                                                    "Encrypt",
+                                                    UiTab::Encrypt,
+                                                    cx,
+                                                )
+                                                .into_any_element(),
+                                                self.render_tab_button(
+                                                    "tab-decrypt",
+                                                    "Decrypt",
+                                                    UiTab::Decrypt,
+                                                    cx,
+                                                )
+                                                .into_any_element(),
+                                                self.render_tab_button(
+                                                    "tab-demo",
+                                                    "Demo",
+                                                    UiTab::Demo,
+                                                    cx,
+                                                )
+                                                .into_any_element(),
+                                            ]),
+                                        )
+                                        .child(div().flex().gap_3().flex_wrap().children(
+                                            MODE_OPTIONS.iter().map(|option| {
+                                                self.render_mode_chip(option, cx).into_any_element()
+                                            }),
+                                        ))
+                                        .child(
+                                            div()
+                                                .p_4()
+                                                .border_1()
+                                                .border_color(rgb(0x000000))
+                                                .bg(rgb(0xFFFFFF))
+                                                .text_sm()
+                                                .child(self.status.clone()),
+                                        ),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .w_full()
+                                .p_6()
+                                .child(div().max_w(px(1120.)).mx_auto().child(panel)),
+                        ),
+                ),
             )
     }
 }
 
 fn action_button(label: &'static str, color: Hsla) -> Div {
+    let text_color: Hsla = if color == rgb(0xFFFFFF).into() {
+        rgb(0x000000).into()
+    } else {
+        white()
+    };
+
     div()
         .cursor_pointer()
         .px_4()
         .py_3()
-        .rounded_lg()
+        .border_1()
+        .border_color(rgb(0x000000))
         .bg(color)
-        .text_color(white())
+        .text_color(text_color)
         .font_weight(gpui::FontWeight::SEMIBOLD)
         .child(label)
 }
@@ -1197,9 +1185,10 @@ fn result_line(label: &'static str, value: &str) -> impl IntoElement {
         .child(
             div()
                 .p_3()
-                .rounded_lg()
-                .bg(rgb(0xF8FAFC))
-                .text_color(rgb(0x0F172A))
+                .border_1()
+                .border_color(rgb(0x000000))
+                .bg(rgb(0xFFFFFF))
+                .text_color(rgb(0x000000))
                 .text_sm()
                 .child(value.to_string()),
         )
