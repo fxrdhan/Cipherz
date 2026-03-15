@@ -1,0 +1,20 @@
+[package]
+name = "tugas_block_cipher_rust"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+bench = false
+
+[[bin]]
+name = "tugas_block_cipher_rust"
+path = "src/main.rs"
+bench = false
+
+[[bench]]
+name = "block_cipher"
+harness = false
+
+[dependencies]
+gpui = "0.2.2"
+unicode-segmentation = "1.12.0"
