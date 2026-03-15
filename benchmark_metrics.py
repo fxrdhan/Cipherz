@@ -16,7 +16,7 @@ from matplotlib.lines import Line2D
 
 
 ROOT = Path(__file__).resolve().parent
-C_ROOT = ROOT / "tugas_block_cipher_c"
+C_ROOT = ROOT
 RUST_ROOT = ROOT
 BUILD_ROOT = ROOT / ".benchmark_build"
 C_BINARY_PATH = BUILD_ROOT / "block_cipher_c"

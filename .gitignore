@@ -3,5 +3,5 @@
 __pycache__/
 *.pyc
 
-tugas_block_cipher_c/block_cipher
+block_cipher
 target/
