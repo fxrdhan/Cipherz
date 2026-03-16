@@ -13,7 +13,6 @@ pub enum CipherMode {
     Cbc,
     Cfb,
     Ofb,
-    Ctr,
 }
 
 impl CipherMode {
@@ -22,7 +21,6 @@ impl CipherMode {
             "cbc" => Some(Self::Cbc),
             "cfb" => Some(Self::Cfb),
             "ofb" => Some(Self::Ofb),
-            "ctr" => Some(Self::Ctr),
             _ => None,
         }
     }
@@ -32,7 +30,6 @@ impl CipherMode {
             Self::Cbc => "CBC",
             Self::Cfb => "CFB",
             Self::Ofb => "OFB",
-            Self::Ctr => "CTR",
         }
     }
 
@@ -41,7 +38,6 @@ impl CipherMode {
             Self::Cbc => "cbc",
             Self::Cfb => "cfb",
             Self::Ofb => "ofb",
-            Self::Ctr => "ctr",
         }
     }
 
@@ -219,15 +215,6 @@ fn hex_string(data: &[u8]) -> String {
     out
 }
 
-fn increment_counter(counter: &mut [u8; BLOCK_SIZE]) {
-    for byte in counter.iter_mut().rev() {
-        *byte = byte.wrapping_add(1);
-        if *byte != 0 {
-            break;
-        }
-    }
-}
-
 pub fn encrypt_message(
     mode: CipherMode,
     plaintext: &[u8],
@@ -278,18 +265,6 @@ pub fn encrypt_message(
                 for i in 0..chunk {
                     output[offset + i] = input[offset + i] ^ feedback[i];
                 }
-                offset += chunk;
-            }
-        }
-        CipherMode::Ctr => {
-            let mut offset = 0usize;
-            while offset < input.len() {
-                let chunk = (input.len() - offset).min(BLOCK_SIZE);
-                let stream = encrypt_block(&feedback, &round_keys);
-                for i in 0..chunk {
-                    output[offset + i] = input[offset + i] ^ stream[i];
-                }
-                increment_counter(&mut feedback);
                 offset += chunk;
             }
         }
@@ -349,18 +324,6 @@ pub fn decrypt_message(
                 offset += chunk;
             }
         }
-        CipherMode::Ctr => {
-            let mut offset = 0usize;
-            while offset < ciphertext.len() {
-                let chunk = (ciphertext.len() - offset).min(BLOCK_SIZE);
-                let stream = encrypt_block(&feedback, &round_keys);
-                for i in 0..chunk {
-                    temp[offset + i] = ciphertext[offset + i] ^ stream[i];
-                }
-                increment_counter(&mut feedback);
-                offset += chunk;
-            }
-        }
     }
 
     if mode.uses_padding() {
@@ -388,48 +351,15 @@ fn parse_size_value(text: &str) -> Option<usize> {
 
 fn print_usage(program: &str) {
     println!("Usage:");
-    println!("  {program} demo");
     println!("  {program} bench");
     println!("  {program} benchcsv <data_bytes> <iterations>");
     println!("  {program} enc <mode> <key16> <iv8> <plaintext>");
     println!("  {program} dec <mode> <key16> <iv8> <ciphertext_hex>\n");
-    println!("Modes: cbc, cfb, ofb, ctr");
+    println!("Modes: cbc, cfb, ofb");
     println!("Catatan:");
     println!("- Key diambil dari 16 karakter pertama.");
-    println!("- IV/nonce diambil dari 8 karakter pertama.");
+    println!("- IV diambil dari 8 karakter pertama.");
     println!("- CBC memakai padding PKCS#7.");
-}
-
-fn run_demo() -> i32 {
-    let plaintext = "Tugas block cipher tanpa library kriptografi";
-    let key_text = "KAMSIS-KEY-2026!";
-    let iv_text = "IV2026!!";
-    let key = derive_bytes::<KEY_SIZE>(key_text);
-    let iv = derive_bytes::<BLOCK_SIZE>(iv_text);
-    let modes = [
-        CipherMode::Cbc,
-        CipherMode::Cfb,
-        CipherMode::Ofb,
-        CipherMode::Ctr,
-    ];
-
-    println!("Plaintext : {plaintext}");
-    println!("Key       : {key_text}");
-    println!("IV/Nonce  : {iv_text}\n");
-
-    for mode in modes {
-        let encrypted = encrypt_message(mode, plaintext.as_bytes(), &key, &iv);
-        let Some(decrypted) = decrypt_message(mode, &encrypted, &key, &iv) else {
-            eprintln!("Gagal dekripsi pada mode {}", mode.name());
-            return 1;
-        };
-
-        println!("[{}]", mode.name());
-        println!("Ciphertext: {}", hex_string(&encrypted));
-        println!("Decrypt   : {}\n", String::from_utf8_lossy(&decrypted));
-    }
-
-    0
 }
 
 fn run_benchmark_internal(data_len: usize, iterations: usize, csv_output: bool) -> i32 {
@@ -441,7 +371,6 @@ fn run_benchmark_internal(data_len: usize, iterations: usize, csv_output: bool) 
         CipherMode::Cbc,
         CipherMode::Cfb,
         CipherMode::Ofb,
-        CipherMode::Ctr,
     ];
 
     let mut plaintext = vec![0u8; data_len];
@@ -537,10 +466,6 @@ pub fn run_cli() -> i32 {
     let args: Vec<String> = std::env::args().collect();
     let program = args.first().map(String::as_str).unwrap_or("block_cipher");
 
-    if args.len() == 2 && args[1] == "demo" {
-        return run_demo();
-    }
-
     if args.len() == 2 && args[1] == "bench" {
         return run_benchmark();
     }
@@ -573,7 +498,7 @@ pub fn run_cli() -> i32 {
 
     let key = derive_bytes::<KEY_SIZE>(&args[3]);
     if args[4] == "-" {
-        eprintln!("Mode {} memerlukan IV/nonce 8 karakter.", args[2]);
+        eprintln!("Mode {} memerlukan IV 8 karakter.", args[2]);
         return 1;
     }
     let iv = derive_bytes::<BLOCK_SIZE>(&args[4]);
@@ -629,10 +554,6 @@ mod tests {
             (
                 CipherMode::Ofb,
                 "E4B82563C6FDEF1DCCFF1ECB9DB6730836A9C6B7DEDCA8DA37A6792A8C8650A661A74E8BE5D75A8966092D54",
-            ),
-            (
-                CipherMode::Ctr,
-                "E4B82563C6FDEF1DF308BD5F4B4C087FABB59B7BBD840F6632251745F633E4EA9A627B5B3C0D31F886885C42",
             ),
         ];
 

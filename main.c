@@ -13,7 +13,6 @@ typedef enum {
     MODE_CBC,
     MODE_CFB,
     MODE_OFB,
-    MODE_CTR,
     MODE_INVALID
 } CipherMode;
 
@@ -234,15 +233,6 @@ static void print_hex(const uint8_t *data, size_t len) {
     printf("\n");
 }
 
-static void increment_counter(uint8_t counter[BLOCK_SIZE]) {
-    for (int i = BLOCK_SIZE - 1; i >= 0; --i) {
-        counter[i]++;
-        if (counter[i] != 0) {
-            break;
-        }
-    }
-}
-
 static CipherMode parse_mode(const char *text) {
     if (strcmp(text, "cbc") == 0) {
         return MODE_CBC;
@@ -252,9 +242,6 @@ static CipherMode parse_mode(const char *text) {
     }
     if (strcmp(text, "ofb") == 0) {
         return MODE_OFB;
-    }
-    if (strcmp(text, "ctr") == 0) {
-        return MODE_CTR;
     }
     return MODE_INVALID;
 }
@@ -267,8 +254,6 @@ static const char *mode_name(CipherMode mode) {
             return "CFB";
         case MODE_OFB:
             return "OFB";
-        case MODE_CTR:
-            return "CTR";
         default:
             return "INVALID";
     }
@@ -282,8 +267,6 @@ static const char *mode_slug(CipherMode mode) {
             return "cfb";
         case MODE_OFB:
             return "ofb";
-        case MODE_CTR:
-            return "ctr";
         default:
             return "invalid";
     }
@@ -356,18 +339,6 @@ static Buffer encrypt_message(CipherMode mode, const uint8_t *plaintext, size_t 
                 output.data[offset + i] = input.data[offset + i] ^ feedback[i];
             }
         }
-    } else if (mode == MODE_CTR) {
-        for (size_t offset = 0; offset < input.len; offset += BLOCK_SIZE) {
-            size_t chunk = input.len - offset;
-            if (chunk > BLOCK_SIZE) {
-                chunk = BLOCK_SIZE;
-            }
-            encrypt_block(feedback, stream, round_keys);
-            for (size_t i = 0; i < chunk; ++i) {
-                output.data[offset + i] = input.data[offset + i] ^ stream[i];
-            }
-            increment_counter(feedback);
-        }
     }
 
     free(input.data);
@@ -429,18 +400,6 @@ static Buffer decrypt_message(CipherMode mode, const uint8_t *ciphertext, size_t
                 temp.data[offset + i] = ciphertext[offset + i] ^ feedback[i];
             }
         }
-    } else if (mode == MODE_CTR) {
-        for (size_t offset = 0; offset < len; offset += BLOCK_SIZE) {
-            size_t chunk = len - offset;
-            if (chunk > BLOCK_SIZE) {
-                chunk = BLOCK_SIZE;
-            }
-            encrypt_block(feedback, stream, round_keys);
-            for (size_t i = 0; i < chunk; ++i) {
-                temp.data[offset + i] = ciphertext[offset + i] ^ stream[i];
-            }
-            increment_counter(feedback);
-        }
     }
 
     if (mode_uses_padding(mode)) {
@@ -488,59 +447,15 @@ static int parse_size_value(const char *text, size_t *value) {
 
 static void print_usage(const char *program) {
     printf("Usage:\n");
-    printf("  %s demo\n", program);
     printf("  %s bench\n", program);
     printf("  %s benchcsv <data_bytes> <iterations>\n", program);
     printf("  %s enc <mode> <key16> <iv8> <plaintext>\n", program);
     printf("  %s dec <mode> <key16> <iv8> <ciphertext_hex>\n\n", program);
-    printf("Modes: cbc, cfb, ofb, ctr\n");
+    printf("Modes: cbc, cfb, ofb\n");
     printf("Catatan:\n");
     printf("- Key diambil dari 16 karakter pertama.\n");
-    printf("- IV/nonce diambil dari 8 karakter pertama.\n");
+    printf("- IV diambil dari 8 karakter pertama.\n");
     printf("- CBC memakai padding PKCS#7.\n");
-}
-
-static int run_demo(void) {
-    const char *plaintext = "Tugas block cipher tanpa library kriptografi";
-    const char *key_text = "KAMSIS-KEY-2026!";
-    const char *iv_text = "IV2026!!";
-    uint8_t key[KEY_SIZE];
-    uint8_t iv[BLOCK_SIZE];
-    CipherMode modes[] = {MODE_CBC, MODE_CFB, MODE_OFB, MODE_CTR};
-
-    derive_bytes(key_text, key, KEY_SIZE);
-    derive_bytes(iv_text, iv, BLOCK_SIZE);
-
-    printf("Plaintext : %s\n", plaintext);
-    printf("Key       : %s\n", key_text);
-    printf("IV/Nonce  : %s\n\n", iv_text);
-
-    for (size_t i = 0; i < sizeof(modes) / sizeof(modes[0]); ++i) {
-        Buffer encrypted = encrypt_message(modes[i], (const uint8_t *)plaintext, strlen(plaintext), key, iv);
-        Buffer decrypted;
-
-        if (encrypted.data == NULL) {
-            fprintf(stderr, "Gagal enkripsi pada mode %s\n", mode_name(modes[i]));
-            return 1;
-        }
-
-        decrypted = decrypt_message(modes[i], encrypted.data, encrypted.len, key, iv);
-        if (decrypted.data == NULL) {
-            fprintf(stderr, "Gagal dekripsi pada mode %s\n", mode_name(modes[i]));
-            free_buffer(&encrypted);
-            return 1;
-        }
-
-        printf("[%s]\n", mode_name(modes[i]));
-        printf("Ciphertext: ");
-        print_hex(encrypted.data, encrypted.len);
-        printf("Decrypt   : %.*s\n\n", (int)decrypted.len, decrypted.data);
-
-        free_buffer(&encrypted);
-        free_buffer(&decrypted);
-    }
-
-    return 0;
 }
 
 static int run_benchmark_internal(size_t data_len, int iterations, int csv_output) {
@@ -549,7 +464,7 @@ static int run_benchmark_internal(size_t data_len, int iterations, int csv_outpu
     uint8_t key[KEY_SIZE];
     uint8_t iv[BLOCK_SIZE];
     uint8_t *plaintext = NULL;
-    CipherMode modes[] = {MODE_CBC, MODE_CFB, MODE_OFB, MODE_CTR};
+    CipherMode modes[] = {MODE_CBC, MODE_CFB, MODE_OFB};
 
     derive_bytes(key_text, key, KEY_SIZE);
     derive_bytes(iv_text, iv, BLOCK_SIZE);
@@ -663,10 +578,6 @@ int main(int argc, char *argv[]) {
     uint8_t key[KEY_SIZE];
     uint8_t iv[BLOCK_SIZE];
 
-    if (argc == 2 && strcmp(argv[1], "demo") == 0) {
-        return run_demo();
-    }
-
     if (argc == 2 && strcmp(argv[1], "bench") == 0) {
         return run_benchmark();
     }
@@ -698,7 +609,7 @@ int main(int argc, char *argv[]) {
 
     derive_bytes(argv[3], key, KEY_SIZE);
     if (strcmp(argv[4], "-") == 0) {
-        fprintf(stderr, "Mode %s memerlukan IV/nonce 8 karakter.\n", argv[2]);
+        fprintf(stderr, "Mode %s memerlukan IV 8 karakter.\n", argv[2]);
         return 1;
     }
     derive_bytes(argv[4], iv, BLOCK_SIZE);

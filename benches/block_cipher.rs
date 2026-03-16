@@ -6,12 +6,7 @@ use tugas_block_cipher_rust::{
 };
 
 const SIZES: [usize; 3] = [1024, 64 * 1024, 1024 * 1024];
-const MODES: [CipherMode; 4] = [
-    CipherMode::Cbc,
-    CipherMode::Cfb,
-    CipherMode::Ofb,
-    CipherMode::Ctr,
-];
+const MODES: [CipherMode; 3] = [CipherMode::Cbc, CipherMode::Cfb, CipherMode::Ofb];
 const TARGET_TOTAL_BYTES: usize = 32 * 1024 * 1024;
 
 fn make_plaintext(data_len: usize) -> Vec<u8> {
