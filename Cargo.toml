@@ -17,4 +17,5 @@ harness = false
 
 [dependencies]
 gpui = "0.2.2"
+rfd = "0.15.4"
 unicode-segmentation = "1.12.0"

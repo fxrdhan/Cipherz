@@ -1,6 +1,5 @@
 use std::ops::Range;
-use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use gpui::{
     App, Application, Bounds, ClickEvent, ClipboardItem, Context, CursorStyle, Div, ElementId,
@@ -10,6 +9,7 @@ use gpui::{
     UTF16Selection, UnderlineStyle, Window, WindowBounds, WindowOptions, actions, div, fill, point,
     prelude::*, px, relative, rgb, rgba, size,
 };
+use rfd::FileDialog;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{BLOCK_SIZE, CipherMode, KEY_SIZE, decrypt_message, derive_bytes, encrypt_message};
@@ -700,6 +700,8 @@ struct BlockCipherApp {
     decrypt_ciphertext: Entity<TextInput>,
     encrypt_result: String,
     decrypt_result: String,
+    encrypt_copy_done_until: Option<Instant>,
+    decrypt_copy_done_until: Option<Instant>,
 }
 
 impl BlockCipherApp {
@@ -728,6 +730,8 @@ impl BlockCipherApp {
             decrypt_ciphertext,
             encrypt_result: String::new(),
             decrypt_result: String::new(),
+            encrypt_copy_done_until: None,
+            decrypt_copy_done_until: None,
         }
     }
 
@@ -751,6 +755,7 @@ impl BlockCipherApp {
         let encrypted = encrypt_message(self.selected_mode, plaintext.as_bytes(), &key, &iv);
 
         self.encrypt_result = hex_string(&encrypted);
+        self.encrypt_copy_done_until = None;
         self.decrypt_ciphertext.update(cx, |input, cx| {
             input.set_value(self.encrypt_result.clone(), cx)
         });
@@ -768,6 +773,7 @@ impl BlockCipherApp {
 
         let Some(ciphertext) = hex_to_bytes(&ciphertext_text) else {
             self.decrypt_result.clear();
+            self.decrypt_copy_done_until = None;
             cx.notify();
             return;
         };
@@ -776,11 +782,13 @@ impl BlockCipherApp {
         let iv = derive_bytes::<BLOCK_SIZE>(&iv_text);
         let Some(plaintext) = decrypt_message(self.selected_mode, &ciphertext, &key, &iv) else {
             self.decrypt_result.clear();
+            self.decrypt_copy_done_until = None;
             cx.notify();
             return;
         };
 
         self.decrypt_result = String::from_utf8_lossy(&plaintext).into_owned();
+        self.decrypt_copy_done_until = None;
         cx.notify();
     }
 
@@ -788,6 +796,7 @@ impl BlockCipherApp {
         self.encrypt_plaintext
             .update(cx, |input, cx| input.clear(cx));
         self.encrypt_result.clear();
+        self.encrypt_copy_done_until = None;
         cx.notify();
     }
 
@@ -795,28 +804,39 @@ impl BlockCipherApp {
         self.decrypt_ciphertext
             .update(cx, |input, cx| input.clear(cx));
         self.decrypt_result.clear();
+        self.decrypt_copy_done_until = None;
         cx.notify();
     }
 
-    fn copy_encrypt_result(
-        &mut self,
-        _: &ClickEvent,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn copy_encrypt_result(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
         if !self.encrypt_result.is_empty() {
             cx.write_to_clipboard(ClipboardItem::new_string(self.encrypt_result.clone()));
+            self.encrypt_copy_done_until = Some(Instant::now() + Duration::from_millis(700));
+            cx.notify();
+            window
+                .spawn(cx, async move |cx| {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(700))
+                        .await;
+                    cx.update(|window, _cx| window.refresh()).ok();
+                })
+                .detach();
         }
     }
 
-    fn copy_decrypt_result(
-        &mut self,
-        _: &ClickEvent,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn copy_decrypt_result(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
         if !self.decrypt_result.is_empty() {
             cx.write_to_clipboard(ClipboardItem::new_string(self.decrypt_result.clone()));
+            self.decrypt_copy_done_until = Some(Instant::now() + Duration::from_millis(700));
+            cx.notify();
+            window
+                .spawn(cx, async move |cx| {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(700))
+                        .await;
+                    cx.update(|window, _cx| window.refresh()).ok();
+                })
+                .detach();
         }
     }
 
@@ -824,18 +844,20 @@ impl BlockCipherApp {
         &mut self,
         _: &ClickEvent,
         _window: &mut Window,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) {
-        let _ = save_output_to_txt("ciphertext", &self.encrypt_result);
+        let _ = save_output_with_dialog("ciphertext", &self.encrypt_result);
+        cx.notify();
     }
 
     fn save_decrypt_result(
         &mut self,
         _: &ClickEvent,
         _window: &mut Window,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) {
-        let _ = save_output_to_txt("plaintext", &self.decrypt_result);
+        let _ = save_output_with_dialog("plaintext", &self.decrypt_result);
+        cx.notify();
     }
 
     fn render_tab_button(
@@ -964,6 +986,14 @@ impl BlockCipherApp {
         ];
 
         if !self.encrypt_result.is_empty() {
+            let copy_label = if self
+                .encrypt_copy_done_until
+                .is_some_and(|deadline| deadline > Instant::now())
+            {
+                "Done"
+            } else {
+                "Copy"
+            };
             action_children.push(
                 div()
                     .text_color(rgb(0xB7A79B))
@@ -973,7 +1003,7 @@ impl BlockCipherApp {
             );
             action_children.push(
                 action_button(
-                    "Copy",
+                    copy_label,
                     rgb(0xFFFDF9).into(),
                     rgb(0x7B7287).into(),
                     rgb(0xD1C2B7).into(),
@@ -1036,6 +1066,14 @@ impl BlockCipherApp {
         ];
 
         if !self.decrypt_result.is_empty() {
+            let copy_label = if self
+                .decrypt_copy_done_until
+                .is_some_and(|deadline| deadline > Instant::now())
+            {
+                "Done"
+            } else {
+                "Copy"
+            };
             action_children.push(
                 div()
                     .text_color(rgb(0xB7A79B))
@@ -1045,7 +1083,7 @@ impl BlockCipherApp {
             );
             action_children.push(
                 action_button(
-                    "Copy",
+                    copy_label,
                     rgb(0xFFFDF9).into(),
                     rgb(0x7B7287).into(),
                     rgb(0xD1C2B7).into(),
@@ -1230,7 +1268,12 @@ impl Render for BlockCipherApp {
     }
 }
 
-fn action_button(label: &'static str, color: Hsla, text_color: Hsla, border_color: Hsla) -> Div {
+fn action_button(
+    label: impl Into<SharedString>,
+    color: Hsla,
+    text_color: Hsla,
+    border_color: Hsla,
+) -> Div {
     div()
         .cursor_pointer()
         .px_4()
@@ -1240,21 +1283,31 @@ fn action_button(label: &'static str, color: Hsla, text_color: Hsla, border_colo
         .bg(color)
         .text_color(text_color)
         .font_weight(gpui::FontWeight::SEMIBOLD)
-        .child(label)
+        .child(label.into())
 }
 
-fn save_output_to_txt(prefix: &str, content: &str) -> std::io::Result<PathBuf> {
+fn save_output_with_dialog(prefix: &str, content: &str) -> std::io::Result<()> {
     if content.is_empty() {
-        return Ok(std::env::current_dir()?.join(format!("{prefix}_empty.txt")));
+        return Ok(());
     }
 
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let path = std::env::current_dir()?.join(format!("{prefix}_{timestamp}.txt"));
-    std::fs::write(&path, content)?;
-    Ok(path)
+    let default_name = format!("{prefix}_{timestamp}.txt");
+    let start_dir = std::env::current_dir().ok();
+
+    let mut dialog = FileDialog::new().add_filter("Text file", &["txt"]);
+    if let Some(dir) = start_dir {
+        dialog = dialog.set_directory(dir);
+    }
+
+    if let Some(path) = dialog.set_file_name(&default_name).save_file() {
+        std::fs::write(path, content)?;
+    }
+
+    Ok(())
 }
 
 fn hex_value(c: u8) -> Option<u8> {
