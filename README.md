@@ -100,6 +100,4 @@ Hasilkan benchmark dan dashboard perbandingan lengkap lewat skrip Python:
 python3 scripts/benchmark_metrics.py
 ```
 
-CLI `C` dan `Rust` tidak lagi menyediakan subcommand benchmark internal. Skrip ini akan membangun binary yang dibutuhkan, menjalankan `enc` dan `dec` untuk kedua implementasi, lalu menghasilkan artifact `CSV` dan dashboard `PNG` di `artifacts/benchmark/`.
-
 ![Dashboard benchmark Cipherz](artifacts/benchmark/benchmark_dashboard.png)
