@@ -32,6 +32,26 @@ Input yang didukung saat ini adalah teks langsung:
 
 Input file `.txt` atau file biner belum diimplementasikan pada versi repo ini.
 
+## Install Tanpa Git
+
+Untuk Linux atau macOS, user bisa ambil snapshot repo tanpa `git clone`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fxrdhan/Cipherz/main/install.sh | sh
+```
+
+Untuk PowerShell, user bisa ambil dan jalankan installer:
+
+```powershell
+Invoke-WebRequest https://raw.githubusercontent.com/fxrdhan/Cipherz/main/install.ps1 -OutFile install.ps1
+./install.ps1
+```
+
+Opsi yang didukung:
+
+- `install.sh`: `--branch`, `--dir`, `--force`
+- `install.ps1`: `-Branch`, `-InstallDir`, `-Force`
+
 ## Kaitan dengan PPT
 
 - konsep block cipher: slide 4
