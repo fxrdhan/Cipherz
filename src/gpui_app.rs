@@ -64,6 +64,9 @@ struct TextInputStyle {
     background: Hsla,
     border: Hsla,
     border_focus: Hsla,
+    invalid_background: Hsla,
+    invalid_border: Hsla,
+    invalid_border_focus: Hsla,
     text: Hsla,
     placeholder: Hsla,
     selection: Hsla,
@@ -76,12 +79,22 @@ impl TextInputStyle {
             background: rgb(0xFFF9F6).into(),
             border: rgb(0xD9CBC2).into(),
             border_focus: rgb(0xCC8F88).into(),
+            invalid_background: rgb(0xFCEDEC).into(),
+            invalid_border: rgb(0xE19A96).into(),
+            invalid_border_focus: rgb(0xD37873).into(),
             text: rgb(0x4A4655).into(),
             placeholder: rgba(0x8B8293CC).into(),
             selection: rgba(0xF0C7C199).into(),
             cursor: rgb(0xB87373).into(),
         }
     }
+}
+
+#[derive(Clone, Copy)]
+enum TextInputValidator {
+    None,
+    ExactLength { len: usize, label: &'static str },
+    Hex { label: &'static str },
 }
 
 struct TextInput {
@@ -95,10 +108,16 @@ struct TextInput {
     last_bounds: Option<Bounds<Pixels>>,
     is_selecting: bool,
     style: TextInputStyle,
+    validator: TextInputValidator,
 }
 
 impl TextInput {
-    fn new(window: &Window, cx: &mut App, placeholder: &str) -> Entity<Self> {
+    fn new(
+        window: &Window,
+        cx: &mut App,
+        placeholder: &str,
+        validator: TextInputValidator,
+    ) -> Entity<Self> {
         let _ = window;
         cx.new(|cx| Self {
             focus_handle: cx.focus_handle(),
@@ -111,6 +130,7 @@ impl TextInput {
             last_bounds: None,
             is_selecting: false,
             style: TextInputStyle::light(),
+            validator,
         })
     }
 
@@ -129,6 +149,30 @@ impl TextInput {
 
     fn clear(&mut self, cx: &mut Context<Self>) {
         self.set_value(String::new(), cx);
+    }
+
+    fn validation_message(&self) -> Option<String> {
+        match self.validator {
+            TextInputValidator::None => None,
+            TextInputValidator::ExactLength { len, label } => {
+                if self.content.len() == len {
+                    None
+                } else {
+                    Some(format!("{label} must be exactly {len} characters."))
+                }
+            }
+            TextInputValidator::Hex { label } => {
+                if self.content.is_empty() {
+                    None
+                } else if self.content.len() % 2 != 0
+                    || !self.content.bytes().all(|byte| byte.is_ascii_hexdigit())
+                {
+                    Some(format!("{label} must be valid hex."))
+                } else {
+                    None
+                }
+            }
+        }
     }
 
     fn left(&mut self, _: &Left, _: &mut Window, cx: &mut Context<Self>) {
@@ -643,18 +687,30 @@ impl Element for TextInputElement {
 
 impl Render for TextInput {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let border_color = if self.focus_handle(cx).is_focused(_window) {
+        let validation_message = self.validation_message();
+        let is_invalid = validation_message.is_some();
+        let border_color = if is_invalid && self.focus_handle(cx).is_focused(_window) {
+            self.style.invalid_border_focus
+        } else if is_invalid {
+            self.style.invalid_border
+        } else if self.focus_handle(cx).is_focused(_window) {
             self.style.border_focus
         } else {
             self.style.border
+        };
+        let background_color = if is_invalid {
+            self.style.invalid_background
+        } else {
+            self.style.background
         };
 
         div()
             .id("text-input-shell")
             .flex()
+            .flex_col()
+            .gap_1()
             .key_context("BlockCipherTextInput")
             .track_focus(&self.focus_handle(cx))
-            .cursor(CursorStyle::IBeam)
             .on_action(cx.listener(Self::backspace))
             .on_action(cx.listener(Self::delete))
             .on_action(cx.listener(Self::left))
@@ -672,14 +728,25 @@ impl Render for TextInput {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
-            .border_1()
-            .border_color(border_color)
-            .rounded_none()
-            .bg(self.style.background)
-            .line_height(px(22.))
-            .text_size(px(16.))
-            .p_3()
-            .child(TextInputElement { input: cx.entity() })
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(rgb(0xB46D72))
+                    .min_h(px(18.))
+                    .child(validation_message.unwrap_or_default()),
+            )
+            .child(
+                div()
+                    .cursor(CursorStyle::IBeam)
+                    .border_1()
+                    .border_color(border_color)
+                    .rounded_none()
+                    .bg(background_color)
+                    .line_height(px(22.))
+                    .text_size(px(16.))
+                    .p_3()
+                    .child(TextInputElement { input: cx.entity() }),
+            )
     }
 }
 
@@ -700,20 +767,57 @@ struct BlockCipherApp {
     decrypt_ciphertext: Entity<TextInput>,
     encrypt_result: String,
     decrypt_result: String,
-    encrypt_notice: String,
-    decrypt_notice: String,
     encrypt_copy_done_until: Option<Instant>,
     decrypt_copy_done_until: Option<Instant>,
 }
 
 impl BlockCipherApp {
     fn new(window: &Window, cx: &mut Context<Self>) -> Self {
-        let encrypt_key = TextInput::new(window, cx, "Key (16 chars)");
-        let encrypt_iv = TextInput::new(window, cx, "IV (8 chars)");
-        let encrypt_plaintext = TextInput::new(window, cx, "Plaintext");
-        let decrypt_key = TextInput::new(window, cx, "Key (16 chars)");
-        let decrypt_iv = TextInput::new(window, cx, "IV (8 chars)");
-        let decrypt_ciphertext = TextInput::new(window, cx, "Ciphertext (hex)");
+        let encrypt_key = TextInput::new(
+            window,
+            cx,
+            "Key (16 chars)",
+            TextInputValidator::ExactLength {
+                len: KEY_SIZE,
+                label: "Key",
+            },
+        );
+        let encrypt_iv = TextInput::new(
+            window,
+            cx,
+            "IV (8 chars)",
+            TextInputValidator::ExactLength {
+                len: BLOCK_SIZE,
+                label: "IV",
+            },
+        );
+        let encrypt_plaintext = TextInput::new(window, cx, "Plaintext", TextInputValidator::None);
+        let decrypt_key = TextInput::new(
+            window,
+            cx,
+            "Key (16 chars)",
+            TextInputValidator::ExactLength {
+                len: KEY_SIZE,
+                label: "Key",
+            },
+        );
+        let decrypt_iv = TextInput::new(
+            window,
+            cx,
+            "IV (8 chars)",
+            TextInputValidator::ExactLength {
+                len: BLOCK_SIZE,
+                label: "IV",
+            },
+        );
+        let decrypt_ciphertext = TextInput::new(
+            window,
+            cx,
+            "Ciphertext (hex)",
+            TextInputValidator::Hex {
+                label: "Ciphertext",
+            },
+        );
 
         encrypt_key.update(cx, |input, cx| input.set_value("", cx));
         encrypt_iv.update(cx, |input, cx| input.set_value("", cx));
@@ -732,8 +836,6 @@ impl BlockCipherApp {
             decrypt_ciphertext,
             encrypt_result: String::new(),
             decrypt_result: String::new(),
-            encrypt_notice: "Enter a 16-character key and an 8-character IV.".to_string(),
-            decrypt_notice: "Enter a 16-character key and an 8-character IV.".to_string(),
             encrypt_copy_done_until: None,
             decrypt_copy_done_until: None,
         }
@@ -754,29 +856,26 @@ impl BlockCipherApp {
         let iv_text = self.encrypt_iv.read(cx).value();
         let plaintext = self.encrypt_plaintext.read(cx).value();
 
-        let Some(notice) = validate_key_iv(&key_text, &iv_text) else {
+        if validate_key_iv(&key_text, &iv_text).is_some() {
             self.encrypt_result.clear();
-            self.encrypt_notice.clear();
             self.encrypt_copy_done_until = None;
-            let key = derive_bytes::<KEY_SIZE>(&key_text);
-            let iv = derive_bytes::<BLOCK_SIZE>(&iv_text);
-            let encrypted = encrypt_message(self.selected_mode, plaintext.as_bytes(), &key, &iv);
-
-            self.encrypt_result = hex_string(&encrypted);
-            self.decrypt_ciphertext.update(cx, |input, cx| {
-                input.set_value(self.encrypt_result.clone(), cx)
-            });
-            self.decrypt_key
-                .update(cx, |input, cx| input.set_value(key_text, cx));
-            self.decrypt_iv
-                .update(cx, |input, cx| input.set_value(iv_text, cx));
             cx.notify();
             return;
-        };
+        }
 
-        self.encrypt_result.clear();
-        self.encrypt_notice = notice;
+        let key = derive_bytes::<KEY_SIZE>(&key_text);
+        let iv = derive_bytes::<BLOCK_SIZE>(&iv_text);
+        let encrypted = encrypt_message(self.selected_mode, plaintext.as_bytes(), &key, &iv);
+
+        self.encrypt_result = hex_string(&encrypted);
         self.encrypt_copy_done_until = None;
+        self.decrypt_ciphertext.update(cx, |input, cx| {
+            input.set_value(self.encrypt_result.clone(), cx)
+        });
+        self.decrypt_key
+            .update(cx, |input, cx| input.set_value(key_text, cx));
+        self.decrypt_iv
+            .update(cx, |input, cx| input.set_value(iv_text, cx));
         cx.notify();
     }
 
@@ -785,9 +884,8 @@ impl BlockCipherApp {
         let iv_text = self.decrypt_iv.read(cx).value();
         let ciphertext_text = self.decrypt_ciphertext.read(cx).value();
 
-        if let Some(notice) = validate_key_iv(&key_text, &iv_text) {
+        if validate_key_iv(&key_text, &iv_text).is_some() {
             self.decrypt_result.clear();
-            self.decrypt_notice = notice;
             self.decrypt_copy_done_until = None;
             cx.notify();
             return;
@@ -795,7 +893,6 @@ impl BlockCipherApp {
 
         let Some(ciphertext) = hex_to_bytes(&ciphertext_text) else {
             self.decrypt_result.clear();
-            self.decrypt_notice = "Ciphertext must be valid hex.".to_string();
             self.decrypt_copy_done_until = None;
             cx.notify();
             return;
@@ -805,15 +902,12 @@ impl BlockCipherApp {
         let iv = derive_bytes::<BLOCK_SIZE>(&iv_text);
         let Some(plaintext) = decrypt_message(self.selected_mode, &ciphertext, &key, &iv) else {
             self.decrypt_result.clear();
-            self.decrypt_notice =
-                "Decryption failed. Check the mode, key, IV, or padding.".to_string();
             self.decrypt_copy_done_until = None;
             cx.notify();
             return;
         };
 
         self.decrypt_result = String::from_utf8_lossy(&plaintext).into_owned();
-        self.decrypt_notice.clear();
         self.decrypt_copy_done_until = None;
         cx.notify();
     }
@@ -822,7 +916,6 @@ impl BlockCipherApp {
         self.encrypt_plaintext
             .update(cx, |input, cx| input.clear(cx));
         self.encrypt_result.clear();
-        self.encrypt_notice = "Enter a 16-character key and an 8-character IV.".to_string();
         self.encrypt_copy_done_until = None;
         cx.notify();
     }
@@ -831,7 +924,6 @@ impl BlockCipherApp {
         self.decrypt_ciphertext
             .update(cx, |input, cx| input.clear(cx));
         self.decrypt_result.clear();
-        self.decrypt_notice = "Enter a 16-character key and an 8-character IV.".to_string();
         self.decrypt_copy_done_until = None;
         cx.notify();
     }
@@ -991,14 +1083,6 @@ impl BlockCipherApp {
             )
     }
 
-    fn render_notice(&self, body: &str) -> impl IntoElement {
-        div()
-            .pt_1()
-            .text_sm()
-            .text_color(rgb(0xB46D72))
-            .child(body.to_string())
-    }
-
     fn render_encrypt_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let mut action_children = vec![
             action_button(
@@ -1076,7 +1160,6 @@ impl BlockCipherApp {
                     .gap_3()
                     .children(action_children),
             )
-            .child(self.render_notice(&self.encrypt_notice))
             .child(self.render_result_card("Ciphertext", &self.encrypt_result))
     }
 
@@ -1157,7 +1240,6 @@ impl BlockCipherApp {
                     .gap_3()
                     .children(action_children),
             )
-            .child(self.render_notice(&self.decrypt_notice))
             .child(self.render_result_card("Plaintext", &self.decrypt_result))
     }
 }
