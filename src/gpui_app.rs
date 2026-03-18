@@ -1,3 +1,4 @@
+use std::io::Read;
 use std::ops::Range;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -795,6 +796,10 @@ struct BlockCipherApp {
     decrypt_result: String,
     encrypt_copy_done_until: Option<Instant>,
     decrypt_copy_done_until: Option<Instant>,
+    encrypt_key_was_generated: bool,
+    encrypt_iv_was_generated: bool,
+    decrypt_key_was_generated: bool,
+    decrypt_iv_was_generated: bool,
 }
 
 impl BlockCipherApp {
@@ -864,6 +869,10 @@ impl BlockCipherApp {
             decrypt_result: String::new(),
             encrypt_copy_done_until: None,
             decrypt_copy_done_until: None,
+            encrypt_key_was_generated: false,
+            encrypt_iv_was_generated: false,
+            decrypt_key_was_generated: false,
+            decrypt_iv_was_generated: false,
         }
     }
 
@@ -906,6 +915,8 @@ impl BlockCipherApp {
             .update(cx, |input, cx| input.set_value(key_text, cx));
         self.decrypt_iv
             .update(cx, |input, cx| input.set_value(iv_text, cx));
+        self.decrypt_key_was_generated = self.encrypt_key_was_generated;
+        self.decrypt_iv_was_generated = self.encrypt_iv_was_generated;
         cx.notify();
     }
 
@@ -1019,6 +1030,58 @@ impl BlockCipherApp {
             self.encrypt_plaintext
                 .update(cx, |input, cx| input.set_value(content, cx));
         }
+        cx.notify();
+    }
+
+    fn generate_encrypt_key(
+        &mut self,
+        _: &ClickEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let generated = random_complex_string(KEY_SIZE);
+        self.encrypt_key
+            .update(cx, |input, cx| input.set_value(generated, cx));
+        self.encrypt_key_was_generated = true;
+        cx.notify();
+    }
+
+    fn generate_encrypt_iv(
+        &mut self,
+        _: &ClickEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let generated = random_complex_string(BLOCK_SIZE);
+        self.encrypt_iv
+            .update(cx, |input, cx| input.set_value(generated, cx));
+        self.encrypt_iv_was_generated = true;
+        cx.notify();
+    }
+
+    fn generate_decrypt_key(
+        &mut self,
+        _: &ClickEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let generated = random_complex_string(KEY_SIZE);
+        self.decrypt_key
+            .update(cx, |input, cx| input.set_value(generated, cx));
+        self.decrypt_key_was_generated = true;
+        cx.notify();
+    }
+
+    fn generate_decrypt_iv(
+        &mut self,
+        _: &ClickEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let generated = random_complex_string(BLOCK_SIZE);
+        self.decrypt_iv
+            .update(cx, |input, cx| input.set_value(generated, cx));
+        self.decrypt_iv_was_generated = true;
         cx.notify();
     }
 
@@ -1153,6 +1216,16 @@ impl BlockCipherApp {
     }
 
     fn render_encrypt_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let encrypt_key_button_label = if self.encrypt_key_was_generated {
+            "Regenerate"
+        } else {
+            "Generate"
+        };
+        let encrypt_iv_button_label = if self.encrypt_iv_was_generated {
+            "Regenerate"
+        } else {
+            "Generate"
+        };
         let mut action_children = vec![
             action_button(
                 "Encrypt",
@@ -1219,8 +1292,42 @@ impl BlockCipherApp {
             .flex_col()
             .gap_4()
             .w_full()
-            .child(self.encrypt_key.clone())
-            .child(self.encrypt_iv.clone())
+            .child(
+                div()
+                    .flex()
+                    .items_end()
+                    .gap_3()
+                    .w_full()
+                    .child(div().flex_1().child(self.encrypt_key.clone()))
+                    .child(
+                        action_button(
+                            encrypt_key_button_label,
+                            rgb(0xFFFDF9).into(),
+                            rgb(0x7B7287).into(),
+                            rgb(0xD1C2B7).into(),
+                        )
+                        .id("encrypt-generate-key")
+                        .on_click(cx.listener(Self::generate_encrypt_key)),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_end()
+                    .gap_3()
+                    .w_full()
+                    .child(div().flex_1().child(self.encrypt_iv.clone()))
+                    .child(
+                        action_button(
+                            encrypt_iv_button_label,
+                            rgb(0xFFFDF9).into(),
+                            rgb(0x7B7287).into(),
+                            rgb(0xD1C2B7).into(),
+                        )
+                        .id("encrypt-generate-iv")
+                        .on_click(cx.listener(Self::generate_encrypt_iv)),
+                    ),
+            )
             .child(
                 div()
                     .flex()
@@ -1250,6 +1357,16 @@ impl BlockCipherApp {
     }
 
     fn render_decrypt_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let decrypt_key_button_label = if self.decrypt_key_was_generated {
+            "Regenerate"
+        } else {
+            "Generate"
+        };
+        let decrypt_iv_button_label = if self.decrypt_iv_was_generated {
+            "Regenerate"
+        } else {
+            "Generate"
+        };
         let mut action_children = vec![
             action_button(
                 "Decrypt",
@@ -1316,8 +1433,42 @@ impl BlockCipherApp {
             .flex_col()
             .gap_4()
             .w_full()
-            .child(self.decrypt_key.clone())
-            .child(self.decrypt_iv.clone())
+            .child(
+                div()
+                    .flex()
+                    .items_end()
+                    .gap_3()
+                    .w_full()
+                    .child(div().flex_1().child(self.decrypt_key.clone()))
+                    .child(
+                        action_button(
+                            decrypt_key_button_label,
+                            rgb(0xFFFDF9).into(),
+                            rgb(0x7B7287).into(),
+                            rgb(0xD1C2B7).into(),
+                        )
+                        .id("decrypt-generate-key")
+                        .on_click(cx.listener(Self::generate_decrypt_key)),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_end()
+                    .gap_3()
+                    .w_full()
+                    .child(div().flex_1().child(self.decrypt_iv.clone()))
+                    .child(
+                        action_button(
+                            decrypt_iv_button_label,
+                            rgb(0xFFFDF9).into(),
+                            rgb(0x7B7287).into(),
+                            rgb(0xD1C2B7).into(),
+                        )
+                        .id("decrypt-generate-iv")
+                        .on_click(cx.listener(Self::generate_decrypt_iv)),
+                    ),
+            )
             .child(self.decrypt_ciphertext.clone())
             .child(
                 div()
@@ -1509,6 +1660,66 @@ fn validate_key_iv(key_text: &str, iv_text: &str) -> Option<String> {
 
 fn sanitize_single_line_text(text: &str) -> String {
     text.replace("\r\n", "\n").replace(['\r', '\n'], " ")
+}
+
+fn random_complex_string(len: usize) -> String {
+    const UPPER: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ";
+    const LOWER: &[u8] = b"abcdefghijkmnopqrstuvwxyz";
+    const DIGIT: &[u8] = b"23456789";
+    const SYMBOL: &[u8] = b"!@#$%^&*()-_=+[]{}?";
+    const ALL: &[u8] =
+        b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*()-_=+[]{}?";
+
+    let mut chars = Vec::with_capacity(len);
+    let required_sets = [UPPER, LOWER, DIGIT, SYMBOL];
+
+    for charset in required_sets {
+        if chars.len() < len {
+            chars.push(random_charset_char(charset));
+        }
+    }
+
+    while chars.len() < len {
+        chars.push(random_charset_char(ALL));
+    }
+
+    for i in (1..chars.len()).rev() {
+        let swap_idx = random_index(i + 1);
+        chars.swap(i, swap_idx);
+    }
+
+    chars.into_iter().collect()
+}
+
+fn random_charset_char(charset: &[u8]) -> char {
+    charset[random_index(charset.len())] as char
+}
+
+fn random_index(upper_bound: usize) -> usize {
+    if upper_bound <= 1 {
+        return 0;
+    }
+
+    (random_u64() % upper_bound as u64) as usize
+}
+
+fn random_u64() -> u64 {
+    let mut bytes = [0u8; 8];
+    if let Ok(mut random) = std::fs::File::open("/dev/urandom")
+        && random.read_exact(&mut bytes).is_ok()
+    {
+        return u64::from_ne_bytes(bytes);
+    }
+
+    let mut seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64;
+    seed ^= (std::process::id() as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    seed ^= seed << 13;
+    seed ^= seed >> 7;
+    seed ^= seed << 17;
+    seed
 }
 
 fn save_output_with_dialog(prefix: &str, content: &str) -> std::io::Result<()> {
