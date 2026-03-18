@@ -174,6 +174,14 @@ build_c_project() {
     )
 }
 
+cleanup_legacy_launchers() {
+    rm -f \
+        "$INSTALL_DIR/run-gui.sh" \
+        "$INSTALL_DIR/run-cli.sh" \
+        "$INSTALL_DIR/run-gui.bat" \
+        "$INSTALL_DIR/run-cli.bat"
+}
+
 run_gui_app() {
     case "$(uname -s)" in
         Linux)
@@ -301,6 +309,8 @@ if [ "$USED_PREBUILT" -eq 0 ]; then
 fi
 
 TARGET_ABS="$(cd "$(dirname "$INSTALL_DIR")" && pwd)/$(basename "$INSTALL_DIR")"
+
+cleanup_legacy_launchers
 
 printf 'Installed to %s\n' "$TARGET_ABS"
 

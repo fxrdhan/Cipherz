@@ -158,6 +158,22 @@ function Build-CProject {
     }
 }
 
+function Remove-LegacyLaunchers {
+    $launcherFiles = @(
+        "run-gui.sh",
+        "run-cli.sh",
+        "run-gui.bat",
+        "run-cli.bat"
+    )
+
+    foreach ($launcher in $launcherFiles) {
+        $launcherPath = Join-Path $resolvedInstallDir $launcher
+        if (Test-Path $launcherPath) {
+            Remove-Item -Force $launcherPath
+        }
+    }
+}
+
 function Run-GuiApp {
     if ($IsLinux -and -not $env:DISPLAY -and -not $env:WAYLAND_DISPLAY) {
         throw "No graphical session detected. Set DISPLAY or WAYLAND_DISPLAY before using -RunUI."
@@ -266,6 +282,7 @@ try {
     }
 
     Write-Host "Installed to $resolvedInstallDir"
+    Remove-LegacyLaunchers
 
     if (-not $SourceOnly -and -not $usedPrebuilt) {
         Add-CargoToPath

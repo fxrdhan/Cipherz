@@ -367,11 +367,7 @@ fn run_benchmark_internal(data_len: usize, iterations: usize, csv_output: bool) 
     let iv_text = "IV2026!!";
     let key = derive_bytes::<KEY_SIZE>(key_text);
     let iv = derive_bytes::<BLOCK_SIZE>(iv_text);
-    let modes = [
-        CipherMode::Cbc,
-        CipherMode::Cfb,
-        CipherMode::Ofb,
-    ];
+    let modes = [CipherMode::Cbc, CipherMode::Cfb, CipherMode::Ofb];
 
     let mut plaintext = vec![0u8; data_len];
     for (i, byte) in plaintext.iter_mut().enumerate() {

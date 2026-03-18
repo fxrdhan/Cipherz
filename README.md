@@ -1,131 +1,123 @@
 # Cipherz
 
-Custom block cipher toolkit with two implementations: `C` for a clean low-level baseline, and `Rust` for the main CLI and desktop GUI. Both run the same cipher design, and in the current benchmark set Rust is also the faster implementation.
+Toolkit cipher blok kustom dengan dua implementasi: `C` sebagai dasar tingkat rendah yang bersih, dan `Rust` untuk CLI utama serta GUI desktop. Keduanya menjalankan desain cipher yang sama, dan pada kumpulan benchmark saat ini Rust juga menjadi implementasi yang lebih cepat.
 
-## Core
+## Gambaran Umum
 
-- `64-bit` block size
-- `128-bit` key size
-- `8-round` Feistel network
-- round function with `XOR`, nibble `S-Box`, rotation, and bit permutation
-- modes: `CBC`, `CFB`, `OFB`
+- ukuran blok `64-bit`
+- ukuran kunci `128-bit`
+- jaringan Feistel `8-round`
+- fungsi ronde dengan `XOR`, nibble `S-Box`, rotasi, dan permutasi bit
+- mode: `CBC`, `CFB`, `OFB`
 
-## Included
+## Komponen yang Tersedia
 
-- CLI in `C`
-- CLI and GUI in `Rust`
-- GUI import for `.txt` and `.md`
-- GUI export to `.txt`
-- benchmark pipeline with `CSV` and dashboard `PNG`
-- Rust tests that lock output parity against the C implementation
+- CLI dalam `C`
+- CLI dan GUI dalam `Rust`
+- impor GUI untuk `.txt` dan `.md`
+- ekspor GUI ke `.txt`
+- alur benchmark dengan `CSV` dan dashboard `PNG`
+- pengujian Rust yang menjaga kesetaraan output terhadap implementasi C
 
-## Why Two Implementations?
+## Alasan Dua Implementasi
 
-- `C` keeps the cipher easy to inspect at the lowest level.
-- `Rust` is the primary app layer: safer memory model, cleaner ergonomics, and GUI support.
-- Keeping both makes regression checks and performance comparisons straightforward.
+- `C` membuat cipher tetap mudah diperiksa pada level terendah.
+- `Rust` adalah lapisan aplikasi utama: model memori lebih aman, ergonomi lebih rapi, dan mendukung GUI.
 
-## Install
+## Instalasi
 
-Standard install:
+Instalasi standar:
 
-Linux or macOS:
+Linux atau macOS:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/fxrdhan/Cipherz/main/install.sh | sh
 ```
 
-Windows PowerShell:
+PowerShell Windows:
 
 ```powershell
 Invoke-WebRequest https://raw.githubusercontent.com/fxrdhan/Cipherz/main/install.ps1 -OutFile install.ps1
 ./install.ps1
 ```
 
-Install and launch the GUI in one step:
+Instalasi default tidak otomatis menjalankan aplikasi. Gunakan `--run-ui` atau `-RunUI` jika Anda ingin installer langsung membuka GUI setelah proses setup selesai.
+
+## Kompilasi dan Eksekusi dari Kode Sumber
+
+Clone repositori terlebih dahulu:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/fxrdhan/Cipherz/main/install.sh | sh -s -- --run-ui
+git clone https://github.com/fxrdhan/Cipherz.git
+cd Cipherz
 ```
 
-```powershell
-./install.ps1 -RunUI
-```
-
-Default install does not auto-launch the app. Use `--run-ui` or `-RunUI` when you want the installer to open the GUI immediately after setup.
-
-## Build From Source
-
-Build the C binary:
+### Membangun Binary C
 
 ```bash
 make
 ```
 
-Run C:
+### Menjalankan Implementasi C
 
 ```bash
 ./block_cipher enc cbc "KAMSIS-KEY-2026!" "IV2026!!" "halo dunia"
 ./block_cipher dec cbc "KAMSIS-KEY-2026!" "IV2026!!" "<ciphertext_hex>"
 ```
 
-Build Rust:
+### Membangun Implementasi Rust
 
 ```bash
 cargo build
 ```
 
-Run Rust CLI:
+### Menjalankan CLI Rust
 
 ```bash
 cargo run -- enc cbc "KAMSIS-KEY-2026!" "IV2026!!" "halo dunia"
 cargo run -- dec cbc "KAMSIS-KEY-2026!" "IV2026!!" "<ciphertext_hex>"
 ```
 
-Run Rust GUI:
+### Menjalankan GUI Rust
 
 ```bash
 cargo run -- ui
 ```
 
-Valid modes:
+## Mode Operasi yang Didukung
+
+Mode yang tersedia:
 
 - `cbc`
 - `cfb`
 - `ofb`
 
-## Benchmark
+## Benchmark dan Kinerja
 
-Run the built-in benchmark:
+Jalankan benchmark bawaan:
 
 ```bash
 ./block_cipher bench
 cargo run -- bench
 ```
 
-Generate the full comparison dashboard:
+Hasilkan dashboard perbandingan lengkap:
 
 ```bash
 python3 scripts/benchmark_metrics.py
 ```
 
-Across the committed benchmark set, Rust leads in every tested mode and operation. Average throughput is about `1.44x` higher overall, and the `4 MiB` runs below show a `1.17x` to `1.47x` advantage depending on mode.
+Rust unggul di setiap mode dan operasi yang diuji. Throughput rata-rata secara keseluruhan sekitar `1.44x` lebih tinggi, dan pengujian `4 MiB` di bawah menunjukkan keunggulan `1.17x` hingga `1.47x` tergantung modenya.
 
-![Cipherz benchmark dashboard](artifacts/benchmark/benchmark_dashboard.png)
+![Dashboard benchmark Cipherz](artifacts/benchmark/benchmark_dashboard.png)
 
-### 4 MiB Snapshot
+### Ringkasan Hasil 4 MiB
 
-| Mode | Operation | C (MiB/s) | Rust (MiB/s) | Rust/C | C (ms) | Rust (ms) |
+| Mode | Operasi | C (MiB/s) | Rust (MiB/s) | Rust/C | C (ms) | Rust (ms) |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| CBC | Encrypt | 116.94 | 167.61 | 1.43x | 34.204 | 23.866 |
-| CBC | Decrypt | 140.99 | 207.02 | 1.47x | 28.371 | 19.322 |
-| CFB | Encrypt | 119.13 | 139.71 | 1.17x | 33.578 | 28.631 |
-| CFB | Decrypt | 144.19 | 195.05 | 1.35x | 27.741 | 20.508 |
-| OFB | Encrypt | 126.31 | 166.21 | 1.32x | 31.668 | 24.066 |
-| OFB | Decrypt | 137.39 | 181.59 | 1.32x | 29.114 | 22.028 |
-
-## Test
-
-```bash
-cargo test
-```
+| CBC | Enkripsi | 116.94 | 167.61 | 1.43x | 34.204 | 23.866 |
+| CBC | Dekripsi | 140.99 | 207.02 | 1.47x | 28.371 | 19.322 |
+| CFB | Enkripsi | 119.13 | 139.71 | 1.17x | 33.578 | 28.631 |
+| CFB | Dekripsi | 144.19 | 195.05 | 1.35x | 27.741 | 20.508 |
+| OFB | Enkripsi | 126.31 | 166.21 | 1.32x | 31.668 | 24.066 |
+| OFB | Dekripsi | 137.39 | 181.59 | 1.32x | 29.114 | 22.028 |

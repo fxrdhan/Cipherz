@@ -1,4 +1,9 @@
-use std::time::{Duration, Instant};
+use std::{
+    io::ErrorKind,
+    path::PathBuf,
+    process::Command,
+    time::{Duration, Instant},
+};
 
 use gpui::{
     ClickEvent, ClipboardItem, Context, Div, Entity, Hsla, SharedString, Window, div, prelude::*,
@@ -15,8 +20,24 @@ use super::{
     },
 };
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CipherEngine {
+    Rust,
+    C,
+}
+
+impl CipherEngine {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Rust => "Rust",
+            Self::C => "C",
+        }
+    }
+}
+
 pub(super) struct BlockCipherApp {
     active_tab: UiTab,
+    selected_engine: CipherEngine,
     selected_mode: CipherMode,
     encrypt_key: Entity<TextInput>,
     encrypt_iv: Entity<TextInput>,
@@ -34,6 +55,7 @@ pub(super) struct BlockCipherApp {
     encrypt_iv_was_generated: bool,
     decrypt_key_was_generated: bool,
     decrypt_iv_was_generated: bool,
+    backend_message: Option<String>,
 }
 
 impl BlockCipherApp {
@@ -95,6 +117,7 @@ impl BlockCipherApp {
 
         Self {
             active_tab: UiTab::Encrypt,
+            selected_engine: CipherEngine::Rust,
             selected_mode: CipherMode::Cbc,
             encrypt_key,
             encrypt_iv,
@@ -112,6 +135,7 @@ impl BlockCipherApp {
             encrypt_iv_was_generated: false,
             decrypt_key_was_generated: false,
             decrypt_iv_was_generated: false,
+            backend_message: None,
         }
     }
 
@@ -125,6 +149,26 @@ impl BlockCipherApp {
         cx.notify();
     }
 
+    fn set_engine(&mut self, engine: CipherEngine, cx: &mut Context<Self>) {
+        self.selected_engine = engine;
+        self.backend_message = None;
+        cx.notify();
+    }
+
+    fn clear_encrypt_result_state(&mut self, cx: &mut Context<Self>) {
+        self.encrypt_result.clear();
+        self.encrypt_result_view
+            .update(cx, |view, cx| view.set_content("", cx));
+        self.encrypt_copy_done_until = None;
+    }
+
+    fn clear_decrypt_result_state(&mut self, cx: &mut Context<Self>) {
+        self.decrypt_result.clear();
+        self.decrypt_result_view
+            .update(cx, |view, cx| view.set_content("", cx));
+        self.decrypt_copy_done_until = None;
+    }
+
     fn encrypt_now(&mut self, _: &ClickEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let key_text = self.encrypt_key.read(cx).value();
         let iv_text = self.encrypt_iv.read(cx).value();
@@ -135,19 +179,33 @@ impl BlockCipherApp {
                 .update(cx, |input, cx| input.reveal_validation(cx));
             self.encrypt_iv
                 .update(cx, |input, cx| input.reveal_validation(cx));
-            self.encrypt_result.clear();
-            self.encrypt_result_view
-                .update(cx, |view, cx| view.set_content("", cx));
-            self.encrypt_copy_done_until = None;
+            self.clear_encrypt_result_state(cx);
             cx.notify();
             return;
         }
 
-        let key = derive_bytes::<KEY_SIZE>(&key_text);
-        let iv = derive_bytes::<BLOCK_SIZE>(&iv_text);
-        let encrypted = encrypt_message(self.selected_mode, plaintext.as_bytes(), &key, &iv);
+        self.encrypt_result = match self.selected_engine {
+            CipherEngine::Rust => {
+                let key = derive_bytes::<KEY_SIZE>(&key_text);
+                let iv = derive_bytes::<BLOCK_SIZE>(&iv_text);
+                let encrypted =
+                    encrypt_message(self.selected_mode, plaintext.as_bytes(), &key, &iv);
+                hex_string(&encrypted)
+            }
+            CipherEngine::C => {
+                match run_c_backend("enc", self.selected_mode, &key_text, &iv_text, &plaintext) {
+                    Ok(ciphertext) => ciphertext,
+                    Err(message) => {
+                        self.backend_message = Some(message);
+                        self.clear_encrypt_result_state(cx);
+                        cx.notify();
+                        return;
+                    }
+                }
+            }
+        };
 
-        self.encrypt_result = hex_string(&encrypted);
+        self.backend_message = None;
         self.encrypt_result_view.update(cx, |view, cx| {
             view.set_content(self.encrypt_result.clone(), cx)
         });
@@ -174,35 +232,50 @@ impl BlockCipherApp {
                 .update(cx, |input, cx| input.reveal_validation(cx));
             self.decrypt_iv
                 .update(cx, |input, cx| input.reveal_validation(cx));
-            self.decrypt_result.clear();
-            self.decrypt_result_view
-                .update(cx, |view, cx| view.set_content("", cx));
-            self.decrypt_copy_done_until = None;
+            self.clear_decrypt_result_state(cx);
             cx.notify();
             return;
         }
 
-        let Some(ciphertext) = hex_to_bytes(&ciphertext_text) else {
-            self.decrypt_result.clear();
-            self.decrypt_result_view
-                .update(cx, |view, cx| view.set_content("", cx));
-            self.decrypt_copy_done_until = None;
-            cx.notify();
-            return;
+        self.decrypt_result = match self.selected_engine {
+            CipherEngine::Rust => {
+                let Some(ciphertext) = hex_to_bytes(&ciphertext_text) else {
+                    self.clear_decrypt_result_state(cx);
+                    cx.notify();
+                    return;
+                };
+
+                let key = derive_bytes::<KEY_SIZE>(&key_text);
+                let iv = derive_bytes::<BLOCK_SIZE>(&iv_text);
+                let Some(plaintext) = decrypt_message(self.selected_mode, &ciphertext, &key, &iv)
+                else {
+                    self.clear_decrypt_result_state(cx);
+                    cx.notify();
+                    return;
+                };
+
+                String::from_utf8_lossy(&plaintext).into_owned()
+            }
+            CipherEngine::C => {
+                match run_c_backend(
+                    "dec",
+                    self.selected_mode,
+                    &key_text,
+                    &iv_text,
+                    &ciphertext_text,
+                ) {
+                    Ok(plaintext) => plaintext,
+                    Err(message) => {
+                        self.backend_message = Some(message);
+                        self.clear_decrypt_result_state(cx);
+                        cx.notify();
+                        return;
+                    }
+                }
+            }
         };
 
-        let key = derive_bytes::<KEY_SIZE>(&key_text);
-        let iv = derive_bytes::<BLOCK_SIZE>(&iv_text);
-        let Some(plaintext) = decrypt_message(self.selected_mode, &ciphertext, &key, &iv) else {
-            self.decrypt_result.clear();
-            self.decrypt_result_view
-                .update(cx, |view, cx| view.set_content("", cx));
-            self.decrypt_copy_done_until = None;
-            cx.notify();
-            return;
-        };
-
-        self.decrypt_result = String::from_utf8_lossy(&plaintext).into_owned();
+        self.backend_message = None;
         self.decrypt_result_view.update(cx, |view, cx| {
             view.set_content(self.decrypt_result.clone(), cx)
         });
@@ -213,20 +286,14 @@ impl BlockCipherApp {
     fn clear_encrypt(&mut self, _: &ClickEvent, _window: &mut Window, cx: &mut Context<Self>) {
         self.encrypt_plaintext
             .update(cx, |input, cx| input.clear(cx));
-        self.encrypt_result.clear();
-        self.encrypt_result_view
-            .update(cx, |view, cx| view.set_content("", cx));
-        self.encrypt_copy_done_until = None;
+        self.clear_encrypt_result_state(cx);
         cx.notify();
     }
 
     fn clear_decrypt(&mut self, _: &ClickEvent, _window: &mut Window, cx: &mut Context<Self>) {
         self.decrypt_ciphertext
             .update(cx, |input, cx| input.clear(cx));
-        self.decrypt_result.clear();
-        self.decrypt_result_view
-            .update(cx, |view, cx| view.set_content("", cx));
-        self.decrypt_copy_done_until = None;
+        self.clear_decrypt_result_state(cx);
         cx.notify();
     }
 
@@ -418,6 +485,41 @@ impl BlockCipherApp {
                     .child(option.title),
             )
             .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| view.set_mode(mode, cx)))
+    }
+
+    fn render_engine_chip(&self, engine: CipherEngine, cx: &mut Context<Self>) -> impl IntoElement {
+        let active = self.selected_engine == engine;
+        let bg: Hsla = if active {
+            rgb(0xD7E1D2).into()
+        } else {
+            rgb(0xFFFDF9).into()
+        };
+        let fg: Hsla = if active {
+            rgb(0x45524A).into()
+        } else {
+            rgb(0x6E7E72).into()
+        };
+        let border: Hsla = rgb(0xB8C7B9).into();
+        let id = match engine {
+            CipherEngine::Rust => "engine-rust",
+            CipherEngine::C => "engine-c",
+        };
+
+        div()
+            .id(id)
+            .cursor_pointer()
+            .flex()
+            .items_center()
+            .justify_center()
+            .w(px(120.))
+            .h(px(CONTROL_HEIGHT))
+            .border_1()
+            .border_color(border)
+            .bg(bg)
+            .text_color(fg)
+            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .child(engine.label())
+            .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| view.set_engine(engine, cx)))
     }
 
     fn render_result_card(
@@ -738,6 +840,73 @@ impl Render for BlockCipherApp {
             UiTab::Encrypt => self.render_encrypt_panel(cx).into_any_element(),
             UiTab::Decrypt => self.render_decrypt_panel(cx).into_any_element(),
         };
+        let mut header_controls = div().flex().flex_col().gap_3().child(
+            div()
+                .flex()
+                .w_full()
+                .items_start()
+                .justify_between()
+                .gap_8()
+                .flex_wrap()
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(
+                            div()
+                                .text_sm()
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .text_color(rgb(0x8B8293))
+                                .child("Mode"),
+                        )
+                        .child(
+                            div().flex().gap_3().children([
+                                self.render_tab_button(
+                                    "tab-encrypt",
+                                    "Encrypt",
+                                    UiTab::Encrypt,
+                                    cx,
+                                )
+                                .into_any_element(),
+                                self.render_tab_button(
+                                    "tab-decrypt",
+                                    "Decrypt",
+                                    UiTab::Decrypt,
+                                    cx,
+                                )
+                                .into_any_element(),
+                            ]),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_end()
+                        .gap_2()
+                        .child(
+                            div()
+                                .text_sm()
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .text_color(rgb(0x6F7B73))
+                                .child("Implementation"),
+                        )
+                        .child(
+                            div().flex().gap_3().children([
+                                self.render_engine_chip(CipherEngine::Rust, cx)
+                                    .into_any_element(),
+                                self.render_engine_chip(CipherEngine::C, cx)
+                                    .into_any_element(),
+                            ]),
+                        ),
+                ),
+        );
+
+        if let Some(message) = self.backend_message.clone() {
+            header_controls =
+                header_controls.child(div().text_sm().text_color(rgb(0xB05F63)).child(message));
+        }
 
         div()
             .size_full()
@@ -844,22 +1013,7 @@ impl Render for BlockCipherApp {
                                                     ),
                                             )
                                             .child(
-                                                div().flex().gap_3().children([
-                                                    self.render_tab_button(
-                                                        "tab-encrypt",
-                                                        "Encrypt",
-                                                        UiTab::Encrypt,
-                                                        cx,
-                                                    )
-                                                    .into_any_element(),
-                                                    self.render_tab_button(
-                                                        "tab-decrypt",
-                                                        "Decrypt",
-                                                        UiTab::Decrypt,
-                                                        cx,
-                                                    )
-                                                    .into_any_element(),
-                                                ]),
+                                                header_controls,
                                             )
                                             .child(div().flex().gap_3().flex_wrap().children(
                                                 MODE_OPTIONS.iter().map(|option| {
@@ -899,4 +1053,73 @@ fn action_button(
         .text_color(text_color)
         .font_weight(gpui::FontWeight::SEMIBOLD)
         .child(label.into())
+}
+
+fn mode_slug(mode: CipherMode) -> &'static str {
+    match mode {
+        CipherMode::Cbc => "cbc",
+        CipherMode::Cfb => "cfb",
+        CipherMode::Ofb => "ofb",
+    }
+}
+
+fn c_backend_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Ok(current_dir) = std::env::current_dir() {
+        candidates.push(current_dir.join("block_cipher"));
+        candidates.push(current_dir.join("c").join("block_cipher"));
+    }
+
+    if let Ok(current_exe) = std::env::current_exe()
+        && let Some(exe_dir) = current_exe.parent()
+    {
+        candidates.push(exe_dir.join("block_cipher"));
+
+        if let Some(parent) = exe_dir.parent() {
+            candidates.push(parent.join("block_cipher"));
+
+            if let Some(grandparent) = parent.parent() {
+                candidates.push(grandparent.join("block_cipher"));
+                candidates.push(grandparent.join("c").join("block_cipher"));
+            }
+        }
+    }
+
+    candidates
+}
+
+fn run_c_backend(
+    operation: &str,
+    mode: CipherMode,
+    key: &str,
+    iv: &str,
+    payload: &str,
+) -> Result<String, String> {
+    let binary = c_backend_candidates()
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+        .unwrap_or_else(|| PathBuf::from("block_cipher"));
+    let output = Command::new(&binary)
+        .args([operation, mode_slug(mode), key, iv, payload])
+        .output()
+        .map_err(|error| match error.kind() {
+            ErrorKind::NotFound => {
+                "Backend C tidak ditemukan. Jalankan `make` agar binary `block_cipher` tersedia."
+                    .to_string()
+            }
+            _ => format!("Gagal menjalankan backend C: {error}"),
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.is_empty() {
+            return Err(format!("Backend C keluar dengan status {}.", output.status));
+        }
+        return Err(stderr);
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .trim_end_matches(['\r', '\n'])
+        .to_string())
 }

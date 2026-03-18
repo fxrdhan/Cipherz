@@ -2,7 +2,7 @@ use std::hint::black_box;
 use std::time::Instant;
 
 use tugas_block_cipher_rust::{
-    decrypt_message, derive_bytes, encrypt_message, CipherMode, BLOCK_SIZE, KEY_SIZE,
+    BLOCK_SIZE, CipherMode, KEY_SIZE, decrypt_message, derive_bytes, encrypt_message,
 };
 
 const SIZES: [usize; 3] = [1024, 64 * 1024, 1024 * 1024];
