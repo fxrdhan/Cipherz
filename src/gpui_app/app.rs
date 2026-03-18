@@ -111,7 +111,9 @@ impl BlockCipherApp {
 
         encrypt_key.update(cx, |input, cx| input.set_value("", cx));
         encrypt_iv.update(cx, |input, cx| input.set_value("", cx));
-        encrypt_plaintext.update(cx, |input, cx| input.set_value("hello", cx));
+        encrypt_plaintext.update(cx, |input, cx| {
+            input.set_value("Firdaus Arif Ramadhani", cx)
+        });
         decrypt_key.update(cx, |input, cx| input.set_value("", cx));
         decrypt_iv.update(cx, |input, cx| input.set_value("", cx));
 
@@ -522,6 +524,14 @@ impl BlockCipherApp {
             .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| view.set_engine(engine, cx)))
     }
 
+    fn render_field_label(&self, label: &'static str) -> Div {
+        div()
+            .text_sm()
+            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .text_color(rgb(0x8B8293))
+            .child(label)
+    }
+
     fn render_result_card(
         &self,
         title: &str,
@@ -640,55 +650,79 @@ impl BlockCipherApp {
             .child(
                 div()
                     .flex()
-                    .items_end()
-                    .gap_3()
+                    .flex_col()
+                    .gap_2()
                     .w_full()
-                    .child(div().flex_1().child(self.encrypt_key.clone()))
+                    .child(self.render_field_label("Key"))
                     .child(
-                        action_button(
-                            encrypt_key_button_label,
-                            rgb(0xFFFDF9).into(),
-                            rgb(0x7B7287).into(),
-                            rgb(0xD1C2B7).into(),
-                        )
-                        .id("encrypt-generate-key")
-                        .on_click(cx.listener(Self::generate_encrypt_key)),
+                        div()
+                            .flex()
+                            .items_end()
+                            .gap_3()
+                            .w_full()
+                            .child(div().flex_1().child(self.encrypt_key.clone()))
+                            .child(
+                                action_button(
+                                    encrypt_key_button_label,
+                                    rgb(0xFFFDF9).into(),
+                                    rgb(0x7B7287).into(),
+                                    rgb(0xD1C2B7).into(),
+                                )
+                                .id("encrypt-generate-key")
+                                .on_click(cx.listener(Self::generate_encrypt_key)),
+                            ),
                     ),
             )
             .child(
                 div()
                     .flex()
-                    .items_end()
-                    .gap_3()
+                    .flex_col()
+                    .gap_2()
                     .w_full()
-                    .child(div().flex_1().child(self.encrypt_iv.clone()))
+                    .child(self.render_field_label("IV"))
                     .child(
-                        action_button(
-                            encrypt_iv_button_label,
-                            rgb(0xFFFDF9).into(),
-                            rgb(0x7B7287).into(),
-                            rgb(0xD1C2B7).into(),
-                        )
-                        .id("encrypt-generate-iv")
-                        .on_click(cx.listener(Self::generate_encrypt_iv)),
+                        div()
+                            .flex()
+                            .items_end()
+                            .gap_3()
+                            .w_full()
+                            .child(div().flex_1().child(self.encrypt_iv.clone()))
+                            .child(
+                                action_button(
+                                    encrypt_iv_button_label,
+                                    rgb(0xFFFDF9).into(),
+                                    rgb(0x7B7287).into(),
+                                    rgb(0xD1C2B7).into(),
+                                )
+                                .id("encrypt-generate-iv")
+                                .on_click(cx.listener(Self::generate_encrypt_iv)),
+                            ),
                     ),
             )
             .child(
                 div()
                     .flex()
-                    .items_end()
-                    .gap_3()
+                    .flex_col()
+                    .gap_2()
                     .w_full()
-                    .child(div().flex_1().child(self.encrypt_plaintext.clone()))
+                    .child(self.render_field_label("Plaintext"))
                     .child(
-                        action_button(
-                            "Import",
-                            rgb(0xFFFDF9).into(),
-                            rgb(0x7B7287).into(),
-                            rgb(0xD1C2B7).into(),
-                        )
-                        .id("encrypt-import")
-                        .on_click(cx.listener(Self::import_plaintext)),
+                        div()
+                            .flex()
+                            .items_end()
+                            .gap_3()
+                            .w_full()
+                            .child(div().flex_1().child(self.encrypt_plaintext.clone()))
+                            .child(
+                                action_button(
+                                    "Import",
+                                    rgb(0xFFFDF9).into(),
+                                    rgb(0x7B7287).into(),
+                                    rgb(0xD1C2B7).into(),
+                                )
+                                .id("encrypt-import")
+                                .on_click(cx.listener(Self::import_plaintext)),
+                            ),
                     ),
             )
             .child(
@@ -785,40 +819,64 @@ impl BlockCipherApp {
             .child(
                 div()
                     .flex()
-                    .items_end()
-                    .gap_3()
+                    .flex_col()
+                    .gap_2()
                     .w_full()
-                    .child(div().flex_1().child(self.decrypt_key.clone()))
+                    .child(self.render_field_label("Key"))
                     .child(
-                        action_button(
-                            decrypt_key_button_label,
-                            rgb(0xFFFDF9).into(),
-                            rgb(0x7B7287).into(),
-                            rgb(0xD1C2B7).into(),
-                        )
-                        .id("decrypt-generate-key")
-                        .on_click(cx.listener(Self::generate_decrypt_key)),
+                        div()
+                            .flex()
+                            .items_end()
+                            .gap_3()
+                            .w_full()
+                            .child(div().flex_1().child(self.decrypt_key.clone()))
+                            .child(
+                                action_button(
+                                    decrypt_key_button_label,
+                                    rgb(0xFFFDF9).into(),
+                                    rgb(0x7B7287).into(),
+                                    rgb(0xD1C2B7).into(),
+                                )
+                                .id("decrypt-generate-key")
+                                .on_click(cx.listener(Self::generate_decrypt_key)),
+                            ),
                     ),
             )
             .child(
                 div()
                     .flex()
-                    .items_end()
-                    .gap_3()
+                    .flex_col()
+                    .gap_2()
                     .w_full()
-                    .child(div().flex_1().child(self.decrypt_iv.clone()))
+                    .child(self.render_field_label("IV"))
                     .child(
-                        action_button(
-                            decrypt_iv_button_label,
-                            rgb(0xFFFDF9).into(),
-                            rgb(0x7B7287).into(),
-                            rgb(0xD1C2B7).into(),
-                        )
-                        .id("decrypt-generate-iv")
-                        .on_click(cx.listener(Self::generate_decrypt_iv)),
+                        div()
+                            .flex()
+                            .items_end()
+                            .gap_3()
+                            .w_full()
+                            .child(div().flex_1().child(self.decrypt_iv.clone()))
+                            .child(
+                                action_button(
+                                    decrypt_iv_button_label,
+                                    rgb(0xFFFDF9).into(),
+                                    rgb(0x7B7287).into(),
+                                    rgb(0xD1C2B7).into(),
+                                )
+                                .id("decrypt-generate-iv")
+                                .on_click(cx.listener(Self::generate_decrypt_iv)),
+                            ),
                     ),
             )
-            .child(self.decrypt_ciphertext.clone())
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .w_full()
+                    .child(self.render_field_label("Ciphertext"))
+                    .child(self.decrypt_ciphertext.clone()),
+            )
             .child(
                 div()
                     .flex()

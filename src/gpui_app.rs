@@ -66,8 +66,8 @@ const CONTROL_HEIGHT: f32 = 48.0;
 const TEXT_LINE_HEIGHT: f32 = 22.0;
 const TEXTAREA_VISIBLE_LINES: usize = 6;
 const TEXTAREA_VERTICAL_PADDING: f32 = 12.0;
-const TEXTAREA_MAX_HEIGHT: f32 =
-    TEXT_LINE_HEIGHT * TEXTAREA_VISIBLE_LINES as f32 + (TEXTAREA_VERTICAL_PADDING * 2.0);
+const TEXTAREA_MAX_CONTENT_HEIGHT: f32 = TEXT_LINE_HEIGHT * TEXTAREA_VISIBLE_LINES as f32;
+const TEXTAREA_MAX_HEIGHT: f32 = TEXTAREA_MAX_CONTENT_HEIGHT + (TEXTAREA_VERTICAL_PADDING * 2.0);
 const RESULT_VIEW_HEIGHT: f32 = 160.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -227,7 +227,9 @@ impl TextInput {
 
     fn field_height(&self) -> Pixels {
         if self.is_multiline() {
-            px(TEXTAREA_MAX_HEIGHT)
+            let content_height = self.content_height.max(px(TEXT_LINE_HEIGHT));
+            let padded_height = content_height + px(TEXTAREA_VERTICAL_PADDING * 2.0);
+            padded_height.clamp(px(CONTROL_HEIGHT), px(TEXTAREA_MAX_HEIGHT))
         } else {
             px(CONTROL_HEIGHT)
         }
