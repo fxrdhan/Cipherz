@@ -201,7 +201,7 @@ run_gui_app() {
     else
         (
             cd "$INSTALL_DIR"
-            cargo run --release -- ui
+            cargo run --release --bin cipherz_gui
         )
     fi
 }
@@ -334,5 +334,5 @@ printf '  cd %s\n' "$INSTALL_DIR"
 if [ "$USED_PREBUILT" -eq 1 ]; then
     printf '  ./cipherz_gui\n'
 else
-    printf '  cargo run -- ui\n'
+    printf '  cargo run --bin cipherz_gui\n'
 fi

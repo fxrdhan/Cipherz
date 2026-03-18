@@ -187,7 +187,7 @@ function Run-GuiApp {
             & $guiBinary
         }
         else {
-            & cargo run --release -- ui
+            & cargo run --release --bin cipherz_gui
         }
     }
     finally {
@@ -311,7 +311,7 @@ try {
         }
     }
     else {
-        Write-Host "  cargo run -- ui"
+        Write-Host "  cargo run --bin cipherz_gui"
     }
 }
 finally {

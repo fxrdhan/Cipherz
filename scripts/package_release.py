@@ -26,6 +26,52 @@ def make_executable(path: Path) -> None:
     path.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
+def copy_source_tree(repo_root: Path, bundle_dir: Path) -> None:
+    source_files = [
+        "Cargo.toml",
+        "Cargo.lock",
+        "Makefile",
+        "README.md",
+        "DOCUMENTATION.md",
+        "install.sh",
+        "install.ps1",
+    ]
+    source_dirs = [
+        "assets",
+        "c",
+        "scripts",
+        "src",
+    ]
+
+    ignore_patterns = shutil.ignore_patterns(
+        "__pycache__",
+        "block_cipher",
+        "block_cipher.exe",
+        "*.pyc",
+        "*.pyo",
+        "*.o",
+        "*.obj",
+        "*.a",
+        "*.so",
+        "*.dylib",
+        ".DS_Store",
+    )
+
+    for file_name in source_files:
+        source_path = repo_root / file_name
+        if source_path.exists():
+            shutil.copy2(source_path, bundle_dir / file_name)
+
+    for dir_name in source_dirs:
+        source_path = repo_root / dir_name
+        if source_path.exists():
+            shutil.copytree(
+                source_path,
+                bundle_dir / dir_name,
+                ignore=ignore_patterns,
+            )
+
+
 def package_archive(bundle_dir: Path, platform: str, output_path: Path) -> Path:
     if platform == "windows":
         with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -70,7 +116,7 @@ def main() -> int:
             if args.platform != "windows":
                 make_executable(target_path)
 
-        shutil.copy2(repo_root / "README.md", bundle_dir / "README.md")
+        copy_source_tree(repo_root, bundle_dir)
         package_archive(bundle_dir, args.platform, output_path)
 
     print(output_path)
