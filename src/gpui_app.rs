@@ -1659,7 +1659,9 @@ fn validate_key_iv(key_text: &str, iv_text: &str) -> Option<String> {
 }
 
 fn sanitize_single_line_text(text: &str) -> String {
-    text.replace("\r\n", "\n").replace(['\r', '\n'], " ")
+    text.replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .replace('\n', "\\n")
 }
 
 fn random_complex_string(len: usize) -> String {
