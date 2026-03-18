@@ -5,6 +5,7 @@ import shutil
 import statistics
 import subprocess
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -25,6 +26,9 @@ ARTIFACT_ROOT = REPO_ROOT / "artifacts" / "benchmark"
 CSV_PATH = ARTIFACT_ROOT / "benchmark_results.csv"
 SUMMARY_PATH = ARTIFACT_ROOT / "benchmark_summary.csv"
 PNG_PATH = ARTIFACT_ROOT / "benchmark_dashboard.png"
+KEY_TEXT = "KAMSIS-KEY-2026!"
+IV_TEXT = "IV2026!!"
+PLAINTEXT_PATTERN = b"Firdaus Arif Ramadhani | "
 
 DEFAULT_SIZES = [
     1024,
@@ -54,7 +58,7 @@ IMPLEMENTATIONS = {
     "rust": {
         "label": "Rust",
         "root": RUST_ROOT,
-        "executable": RUST_TARGET_DIR / "release" / "tugas_block_cipher_rust",
+        "executable": RUST_TARGET_DIR / "release" / "cipherz_cli",
         "linestyle": "--",
         "marker": "s",
     },
@@ -75,20 +79,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--samples",
         type=int,
-        default=3,
-        help="jumlah sampel per ukuran data (default: 3)",
+        default=1,
+        help="jumlah sampel per ukuran data (default: 1)",
     )
     parser.add_argument(
         "--target-mib",
         type=int,
-        default=96,
-        help="target total data per ukuran dalam MiB (default: 96)",
+        default=8,
+        help="target total data per ukuran dalam MiB (default: 8)",
     )
     parser.add_argument(
         "--max-iterations",
         type=int,
-        default=3000,
-        help="batas maksimum iterasi per ukuran (default: 3000)",
+        default=8,
+        help="batas maksimum iterasi per ukuran (default: 8)",
     )
     return parser.parse_args()
 
@@ -127,7 +131,7 @@ def ensure_binary(implementation: str) -> None:
             "--target-dir",
             str(RUST_TARGET_DIR),
             "--bin",
-            "tugas_block_cipher_rust",
+            "cipherz_cli",
         ]
         cwd = RUST_ROOT
 
@@ -147,25 +151,93 @@ def ensure_binary(implementation: str) -> None:
 
 def choose_iterations(size_bytes: int, target_mib: int, max_iterations: int) -> int:
     target_total_bytes = target_mib * 1024 * 1024
-    iterations = max(8, target_total_bytes // size_bytes)
+    iterations = max(1, target_total_bytes // size_bytes)
     return min(iterations, max_iterations)
 
 
-def run_benchcsv(
+def generate_plaintext(size_bytes: int) -> bytes:
+    repeats = (size_bytes + len(PLAINTEXT_PATTERN) - 1) // len(PLAINTEXT_PATTERN)
+    return (PLAINTEXT_PATTERN * repeats)[:size_bytes]
+
+
+def trim_cli_output(output: bytes) -> bytes:
+    return output.rstrip(b"\r\n")
+
+
+def run_cli_command(
     implementation: str,
-    size_bytes: int,
-    iterations: int,
-) -> list[dict[str, str]]:
+    args: list[str],
+    stdin_bytes: bytes,
+) -> tuple[float, bytes]:
     spec = IMPLEMENTATIONS[implementation]
+    started_at = time.perf_counter()
     result = subprocess.run(
-        [str(spec["executable"]), "benchcsv", str(size_bytes), str(iterations)],
+        [str(spec["executable"]), *args],
         cwd=spec["root"],
         check=True,
+        input=stdin_bytes,
         capture_output=True,
-        text=True,
     )
-    lines = [line for line in result.stdout.splitlines() if line.strip()]
-    return list(csv.DictReader(lines))
+    elapsed = time.perf_counter() - started_at
+    return elapsed, trim_cli_output(result.stdout)
+
+
+def benchmark_mode(
+    implementation: str,
+    mode: str,
+    plaintext: bytes,
+    iterations: int,
+) -> list[dict[str, str]]:
+    enc_total_seconds = 0.0
+    dec_total_seconds = 0.0
+    last_ciphertext = b""
+
+    for _ in range(iterations):
+        elapsed, last_ciphertext = run_cli_command(
+            implementation,
+            ["enc", mode, KEY_TEXT, IV_TEXT, "-"],
+            plaintext,
+        )
+        enc_total_seconds += elapsed
+
+    last_plaintext = b""
+    for _ in range(iterations):
+        elapsed, last_plaintext = run_cli_command(
+            implementation,
+            ["dec", mode, KEY_TEXT, IV_TEXT, "-"],
+            last_ciphertext,
+        )
+        dec_total_seconds += elapsed
+
+    if last_plaintext != plaintext:
+        raise RuntimeError(
+            f"Verifikasi benchmark gagal untuk implementasi {implementation} mode {mode}."
+        )
+
+    total_bytes = len(plaintext) * iterations
+    enc_throughput = total_bytes / (1024.0 * 1024.0 * enc_total_seconds)
+    dec_throughput = total_bytes / (1024.0 * 1024.0 * dec_total_seconds)
+
+    return [
+        {
+            "mode": mode,
+            "operation": "encrypt",
+            "data_bytes": str(len(plaintext)),
+            "iterations": str(iterations),
+            "total_seconds": f"{enc_total_seconds:.6f}",
+            "throughput_mib_s": f"{enc_throughput:.6f}",
+            "avg_ms_per_iteration": f"{(enc_total_seconds * 1000.0) / iterations:.6f}",
+        },
+        {
+            "mode": mode,
+            "operation": "decrypt",
+            "data_bytes": str(len(plaintext)),
+            "iterations": str(iterations),
+            "total_seconds": f"{dec_total_seconds:.6f}",
+            "throughput_mib_s": f"{dec_throughput:.6f}",
+            "avg_ms_per_iteration": f"{(dec_total_seconds * 1000.0) / iterations:.6f}",
+        },
+    ]
 
 
 def collect_rows(
@@ -180,15 +252,22 @@ def collect_rows(
         print(f"\n== Benchmark {IMPLEMENTATIONS[implementation]['label']} ==")
         for size_bytes in sizes:
             iterations = choose_iterations(size_bytes, target_mib, max_iterations)
+            plaintext = generate_plaintext(size_bytes)
             for sample in range(1, samples + 1):
                 print(
                     f"{implementation} | {size_bytes} bytes x {iterations} iterations | sample {sample}/{samples}"
                 )
-                sample_rows = run_benchcsv(implementation, size_bytes, iterations)
-                for row in sample_rows:
-                    row["implementation"] = implementation
-                    row["sample"] = str(sample)
-                    rows.append(row)
+                for mode in MODES:
+                    sample_rows = benchmark_mode(
+                        implementation,
+                        mode,
+                        plaintext,
+                        iterations,
+                    )
+                    for row in sample_rows:
+                        row["implementation"] = implementation
+                        row["sample"] = str(sample)
+                        rows.append(row)
     return rows
 
 
@@ -515,8 +594,10 @@ def main() -> int:
         print(f"PNG dashboard: {PNG_PATH}")
         return 0
     except subprocess.CalledProcessError as exc:
-        sys.stderr.write(exc.stdout or "")
-        sys.stderr.write(exc.stderr or "")
+        if exc.stdout:
+            sys.stderr.write(exc.stdout.decode("utf-8", errors="replace"))
+        if exc.stderr:
+            sys.stderr.write(exc.stderr.decode("utf-8", errors="replace"))
         return exc.returncode
     except Exception as exc:
         sys.stderr.write(f"Error: {exc}\n")

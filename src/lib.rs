@@ -1,6 +1,5 @@
 use std::fmt::Write as _;
-use std::io::{self, Write};
-use std::time::Instant;
+use std::io::{self, Read, Write};
 
 pub mod gpui_app;
 
@@ -22,22 +21,6 @@ impl CipherMode {
             "cfb" => Some(Self::Cfb),
             "ofb" => Some(Self::Ofb),
             _ => None,
-        }
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Cbc => "CBC",
-            Self::Cfb => "CFB",
-            Self::Ofb => "OFB",
-        }
-    }
-
-    fn slug(self) -> &'static str {
-        match self {
-            Self::Cbc => "cbc",
-            Self::Cfb => "cfb",
-            Self::Ofb => "ofb",
         }
     }
 
@@ -333,153 +316,33 @@ pub fn decrypt_message(
     }
 }
 
-fn parse_positive_int(text: &str) -> Option<usize> {
-    let parsed = text.parse::<usize>().ok()?;
-    if parsed == 0 || parsed > 100_000_000 {
-        return None;
-    }
-    Some(parsed)
-}
-
-fn parse_size_value(text: &str) -> Option<usize> {
-    let parsed = text.parse::<u128>().ok()?;
-    if parsed == 0 || parsed > usize::MAX as u128 {
-        return None;
-    }
-    Some(parsed as usize)
-}
-
 fn print_usage(program: &str) {
     println!("Usage:");
-    println!("  {program} bench");
-    println!("  {program} benchcsv <data_bytes> <iterations>");
-    println!("  {program} enc <mode> <key16> <iv8> <plaintext>");
-    println!("  {program} dec <mode> <key16> <iv8> <ciphertext_hex>\n");
+    println!("  {program} enc <mode> <key16> <iv8> <plaintext|->");
+    println!("  {program} dec <mode> <key16> <iv8> <ciphertext_hex|->\n");
     println!("Modes: cbc, cfb, ofb");
     println!("Catatan:");
     println!("- Key diambil dari 16 karakter pertama.");
     println!("- IV diambil dari 8 karakter pertama.");
     println!("- CBC memakai padding PKCS#7.");
+    println!("- Gunakan `-` sebagai payload untuk membaca data dari stdin.");
 }
 
-fn run_benchmark_internal(data_len: usize, iterations: usize, csv_output: bool) -> i32 {
-    let key_text = "KAMSIS-KEY-2026!";
-    let iv_text = "IV2026!!";
-    let key = derive_bytes::<KEY_SIZE>(key_text);
-    let iv = derive_bytes::<BLOCK_SIZE>(iv_text);
-    let modes = [CipherMode::Cbc, CipherMode::Cfb, CipherMode::Ofb];
-
-    let mut plaintext = vec![0u8; data_len];
-    for (i, byte) in plaintext.iter_mut().enumerate() {
-        *byte = (((i as u128) * 37 + 11) & 0xFF) as u8;
-    }
-
-    if csv_output {
-        println!(
-            "mode,operation,data_bytes,iterations,total_seconds,throughput_mib_s,avg_ms_per_iteration"
-        );
-    } else {
-        println!("Benchmark block cipher");
-        println!("Data per iterasi : {data_len} bytes");
-        println!("Jumlah iterasi   : {iterations}\n");
-    }
-
-    for mode in modes {
-        let enc_start = Instant::now();
-        let mut last_cipher = Vec::new();
-        for iter in 0..iterations {
-            let encrypted = encrypt_message(mode, &plaintext, &key, &iv);
-            if iter + 1 == iterations {
-                last_cipher = encrypted;
-            }
-        }
-        let enc_seconds = enc_start.elapsed().as_secs_f64();
-
-        let dec_start = Instant::now();
-        let mut last_plain = Vec::new();
-        for iter in 0..iterations {
-            let Some(decrypted) = decrypt_message(mode, &last_cipher, &key, &iv) else {
-                eprintln!("Benchmark dekripsi gagal pada mode {}", mode.name());
-                return 1;
-            };
-            if iter + 1 == iterations {
-                last_plain = decrypted;
-            }
-        }
-        let dec_seconds = dec_start.elapsed().as_secs_f64();
-
-        if last_plain != plaintext {
-            eprintln!("Verifikasi benchmark gagal pada mode {}", mode.name());
-            return 1;
-        }
-
-        let total_bytes = (data_len as f64) * (iterations as f64);
-        let enc_mib_s = total_bytes / (1024.0 * 1024.0 * enc_seconds);
-        let dec_mib_s = total_bytes / (1024.0 * 1024.0 * dec_seconds);
-
-        if csv_output {
-            println!(
-                "{},{},{},{},{:.6},{:.6},{:.6}",
-                mode.slug(),
-                "encrypt",
-                data_len,
-                iterations,
-                enc_seconds,
-                enc_mib_s,
-                (enc_seconds * 1000.0) / (iterations as f64)
-            );
-            println!(
-                "{},{},{},{},{:.6},{:.6},{:.6}",
-                mode.slug(),
-                "decrypt",
-                data_len,
-                iterations,
-                dec_seconds,
-                dec_mib_s,
-                (dec_seconds * 1000.0) / (iterations as f64)
-            );
-        } else {
-            println!("[{}]", mode.name());
-            println!(
-                "  Enkripsi : {:.4} s total | {:.2} MiB/s",
-                enc_seconds, enc_mib_s
-            );
-            println!(
-                "  Dekripsi : {:.4} s total | {:.2} MiB/s\n",
-                dec_seconds, dec_mib_s
-            );
-        }
-    }
-
-    0
+fn read_stdin_all() -> io::Result<Vec<u8>> {
+    let mut buffer = Vec::new();
+    io::stdin().read_to_end(&mut buffer)?;
+    Ok(buffer)
 }
 
-fn run_benchmark() -> i32 {
-    run_benchmark_internal(1024 * 1024, 200, false)
+fn trim_trailing_line_endings(buffer: &mut Vec<u8>) {
+    while matches!(buffer.last(), Some(b'\n' | b'\r')) {
+        buffer.pop();
+    }
 }
 
 pub fn run_cli() -> i32 {
     let args: Vec<String> = std::env::args().collect();
     let program = args.first().map(String::as_str).unwrap_or("block_cipher");
-
-    if args.len() == 2 && args[1] == "bench" {
-        return run_benchmark();
-    }
-
-    if args.len() == 4 && args[1] == "benchcsv" {
-        let Some(data_len) = parse_size_value(&args[2]) else {
-            eprintln!("Argumen benchcsv tidak valid.");
-            print_usage(program);
-            return 1;
-        };
-        let Some(iterations) = parse_positive_int(&args[3]) else {
-            eprintln!("Argumen benchcsv tidak valid.");
-            print_usage(program);
-            return 1;
-        };
-
-        return run_benchmark_internal(data_len, iterations, true);
-    }
 
     if args.len() != 6 {
         print_usage(program);
@@ -500,13 +363,39 @@ pub fn run_cli() -> i32 {
     let iv = derive_bytes::<BLOCK_SIZE>(&args[4]);
 
     if args[1] == "enc" {
-        let encrypted = encrypt_message(mode, args[5].as_bytes(), &key, &iv);
+        let plaintext = if args[5] == "-" {
+            match read_stdin_all() {
+                Ok(stdin_bytes) => stdin_bytes,
+                Err(error) => {
+                    eprintln!("Gagal membaca stdin: {error}");
+                    return 1;
+                }
+            }
+        } else {
+            args[5].as_bytes().to_vec()
+        };
+
+        let encrypted = encrypt_message(mode, &plaintext, &key, &iv);
         println!("{}", hex_string(&encrypted));
         return 0;
     }
 
     if args[1] == "dec" {
-        let Some(ciphertext) = hex_to_bytes(&args[5]) else {
+        let ciphertext_input = if args[5] == "-" {
+            let mut stdin_bytes = match read_stdin_all() {
+                Ok(stdin_bytes) => stdin_bytes,
+                Err(error) => {
+                    eprintln!("Gagal membaca stdin: {error}");
+                    return 1;
+                }
+            };
+            trim_trailing_line_endings(&mut stdin_bytes);
+            String::from_utf8_lossy(&stdin_bytes).into_owned()
+        } else {
+            args[5].clone()
+        };
+
+        let Some(ciphertext) = hex_to_bytes(&ciphertext_input) else {
             eprintln!("Ciphertext hex tidak valid.");
             return 1;
         };

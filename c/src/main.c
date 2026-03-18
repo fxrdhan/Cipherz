@@ -1,9 +1,7 @@
-#include <ctype.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 #define BLOCK_SIZE 8
 #define KEY_SIZE 16
@@ -246,32 +244,6 @@ static CipherMode parse_mode(const char *text) {
     return MODE_INVALID;
 }
 
-static const char *mode_name(CipherMode mode) {
-    switch (mode) {
-        case MODE_CBC:
-            return "CBC";
-        case MODE_CFB:
-            return "CFB";
-        case MODE_OFB:
-            return "OFB";
-        default:
-            return "INVALID";
-    }
-}
-
-static const char *mode_slug(CipherMode mode) {
-    switch (mode) {
-        case MODE_CBC:
-            return "cbc";
-        case MODE_CFB:
-            return "cfb";
-        case MODE_OFB:
-            return "ofb";
-        default:
-            return "invalid";
-    }
-}
-
 static int mode_uses_padding(CipherMode mode) {
     return mode == MODE_CBC;
 }
@@ -419,181 +391,79 @@ static void free_buffer(Buffer *buffer) {
     buffer->len = 0;
 }
 
-static double now_seconds(void) {
-    struct timespec ts;
-    timespec_get(&ts, TIME_UTC);
-    return (double)ts.tv_sec + ((double)ts.tv_nsec / 1000000000.0);
-}
-
-static int parse_positive_int(const char *text, int *value) {
-    char *end = NULL;
-    long parsed = strtol(text, &end, 10);
-    if (end == text || *end != '\0' || parsed <= 0 || parsed > 100000000L) {
-        return 0;
-    }
-    *value = (int)parsed;
-    return 1;
-}
-
-static int parse_size_value(const char *text, size_t *value) {
-    char *end = NULL;
-    unsigned long long parsed = strtoull(text, &end, 10);
-    if (end == text || *end != '\0' || parsed == 0ULL) {
-        return 0;
-    }
-    *value = (size_t)parsed;
-    return 1;
-}
-
 static void print_usage(const char *program) {
     printf("Usage:\n");
-    printf("  %s bench\n", program);
-    printf("  %s benchcsv <data_bytes> <iterations>\n", program);
-    printf("  %s enc <mode> <key16> <iv8> <plaintext>\n", program);
-    printf("  %s dec <mode> <key16> <iv8> <ciphertext_hex>\n\n", program);
+    printf("  %s enc <mode> <key16> <iv8> <plaintext|->\n", program);
+    printf("  %s dec <mode> <key16> <iv8> <ciphertext_hex|->\n\n", program);
     printf("Modes: cbc, cfb, ofb\n");
     printf("Catatan:\n");
     printf("- Key diambil dari 16 karakter pertama.\n");
     printf("- IV diambil dari 8 karakter pertama.\n");
     printf("- CBC memakai padding PKCS#7.\n");
+    printf("- Gunakan '-' sebagai payload untuk membaca data dari stdin.\n");
 }
 
-static int run_benchmark_internal(size_t data_len, int iterations, int csv_output) {
-    const char *key_text = "KAMSIS-KEY-2026!";
-    const char *iv_text = "IV2026!!";
-    uint8_t key[KEY_SIZE];
-    uint8_t iv[BLOCK_SIZE];
-    uint8_t *plaintext = NULL;
-    CipherMode modes[] = {MODE_CBC, MODE_CFB, MODE_OFB};
+static Buffer read_stdin_all(void) {
+    Buffer out = {NULL, 0};
+    size_t capacity = 4096;
 
-    derive_bytes(key_text, key, KEY_SIZE);
-    derive_bytes(iv_text, iv, BLOCK_SIZE);
-
-    plaintext = (uint8_t *)malloc(data_len);
-    if (plaintext == NULL) {
-        fprintf(stderr, "Gagal mengalokasikan buffer benchmark.\n");
-        return 1;
+    out.data = (uint8_t *)malloc(capacity + 1);
+    if (out.data == NULL) {
+        return out;
     }
 
-    for (size_t i = 0; i < data_len; ++i) {
-        plaintext[i] = (uint8_t)((i * 37U + 11U) & 0xFFU);
+    for (;;) {
+        size_t available = capacity - out.len;
+        size_t bytes_read = fread(out.data + out.len, 1, available, stdin);
+        out.len += bytes_read;
+
+        if (bytes_read < available) {
+            if (ferror(stdin)) {
+                free(out.data);
+                out.data = NULL;
+                out.len = 0;
+            }
+            break;
+        }
+
+        {
+            size_t new_capacity = capacity * 2;
+            uint8_t *resized = (uint8_t *)realloc(out.data, new_capacity + 1);
+            if (resized == NULL) {
+                free(out.data);
+                out.data = NULL;
+                out.len = 0;
+                return out;
+            }
+            out.data = resized;
+            capacity = new_capacity;
+        }
     }
 
-    if (csv_output) {
-        printf("mode,operation,data_bytes,iterations,total_seconds,throughput_mib_s,avg_ms_per_iteration\n");
-    } else {
-        printf("Benchmark block cipher\n");
-        printf("Data per iterasi : %zu bytes\n", data_len);
-        printf("Jumlah iterasi   : %d\n\n", iterations);
+    if (out.data != NULL) {
+        out.data[out.len] = '\0';
     }
 
-    for (size_t i = 0; i < sizeof(modes) / sizeof(modes[0]); ++i) {
-        double enc_start;
-        double enc_end;
-        double dec_start;
-        double dec_end;
-        double enc_mb_s;
-        double dec_mb_s;
-        Buffer last_cipher = {NULL, 0};
-        Buffer last_plain = {NULL, 0};
-
-        enc_start = now_seconds();
-        for (int iter = 0; iter < iterations; ++iter) {
-            Buffer encrypted = encrypt_message(modes[i], plaintext, data_len, key, iv);
-            if (encrypted.data == NULL) {
-                fprintf(stderr, "Benchmark enkripsi gagal pada mode %s\n", mode_name(modes[i]));
-                free(plaintext);
-                return 1;
-            }
-            if (iter == iterations - 1) {
-                last_cipher = encrypted;
-            } else {
-                free_buffer(&encrypted);
-            }
-        }
-        enc_end = now_seconds();
-
-        dec_start = now_seconds();
-        for (int iter = 0; iter < iterations; ++iter) {
-            Buffer decrypted = decrypt_message(modes[i], last_cipher.data, last_cipher.len, key, iv);
-            if (decrypted.data == NULL) {
-                fprintf(stderr, "Benchmark dekripsi gagal pada mode %s\n", mode_name(modes[i]));
-                free_buffer(&last_cipher);
-                free(plaintext);
-                return 1;
-            }
-            if (iter == iterations - 1) {
-                last_plain = decrypted;
-            } else {
-                free_buffer(&decrypted);
-            }
-        }
-        dec_end = now_seconds();
-
-        if (last_plain.len != data_len || memcmp(last_plain.data, plaintext, data_len) != 0) {
-            fprintf(stderr, "Verifikasi benchmark gagal pada mode %s\n", mode_name(modes[i]));
-            free_buffer(&last_cipher);
-            free_buffer(&last_plain);
-            free(plaintext);
-            return 1;
-        }
-
-        enc_mb_s = ((double)data_len * (double)iterations) / (1024.0 * 1024.0 * (enc_end - enc_start));
-        dec_mb_s = ((double)data_len * (double)iterations) / (1024.0 * 1024.0 * (dec_end - dec_start));
-
-        if (csv_output) {
-            printf("%s,encrypt,%zu,%d,%.6f,%.6f,%.6f\n",
-                   mode_slug(modes[i]),
-                   data_len,
-                   iterations,
-                   enc_end - enc_start,
-                   enc_mb_s,
-                   ((enc_end - enc_start) * 1000.0) / (double)iterations);
-            printf("%s,decrypt,%zu,%d,%.6f,%.6f,%.6f\n",
-                   mode_slug(modes[i]),
-                   data_len,
-                   iterations,
-                   dec_end - dec_start,
-                   dec_mb_s,
-                   ((dec_end - dec_start) * 1000.0) / (double)iterations);
-        } else {
-            printf("[%s]\n", mode_name(modes[i]));
-            printf("  Enkripsi : %.4f s total | %.2f MiB/s\n", enc_end - enc_start, enc_mb_s);
-            printf("  Dekripsi : %.4f s total | %.2f MiB/s\n\n", dec_end - dec_start, dec_mb_s);
-        }
-
-        free_buffer(&last_cipher);
-        free_buffer(&last_plain);
-    }
-
-    free(plaintext);
-    return 0;
+    return out;
 }
 
-static int run_benchmark(void) {
-    return run_benchmark_internal(1024 * 1024, 200, 0);
+static void trim_trailing_line_endings(Buffer *buffer) {
+    while (buffer->len > 0) {
+        uint8_t last = buffer->data[buffer->len - 1];
+        if (last != '\n' && last != '\r') {
+            break;
+        }
+        buffer->len--;
+    }
+
+    if (buffer->data != NULL) {
+        buffer->data[buffer->len] = '\0';
+    }
 }
 
 int main(int argc, char *argv[]) {
     uint8_t key[KEY_SIZE];
     uint8_t iv[BLOCK_SIZE];
-
-    if (argc == 2 && strcmp(argv[1], "bench") == 0) {
-        return run_benchmark();
-    }
-
-    if (argc == 4 && strcmp(argv[1], "benchcsv") == 0) {
-        size_t data_len = 0;
-        int iterations = 0;
-
-        if (!parse_size_value(argv[2], &data_len) || !parse_positive_int(argv[3], &iterations)) {
-            fprintf(stderr, "Argumen benchcsv tidak valid.\n");
-            print_usage(argv[0]);
-            return 1;
-        }
-
-        return run_benchmark_internal(data_len, iterations, 1);
-    }
 
     if (argc != 6) {
         print_usage(argv[0]);
@@ -615,7 +485,23 @@ int main(int argc, char *argv[]) {
     derive_bytes(argv[4], iv, BLOCK_SIZE);
 
     if (strcmp(argv[1], "enc") == 0) {
-        Buffer encrypted = encrypt_message(mode, (const uint8_t *)argv[5], strlen(argv[5]), key, iv);
+        Buffer plaintext = {NULL, 0};
+        Buffer encrypted;
+
+        if (strcmp(argv[5], "-") == 0) {
+            plaintext = read_stdin_all();
+        } else {
+            plaintext = clone_buffer((const uint8_t *)argv[5], strlen(argv[5]));
+        }
+
+        if (plaintext.data == NULL) {
+            fprintf(stderr, "Gagal membaca plaintext.\n");
+            return 1;
+        }
+
+        encrypted = encrypt_message(mode, plaintext.data, plaintext.len, key, iv);
+        free_buffer(&plaintext);
+
         if (encrypted.data == NULL) {
             fprintf(stderr, "Enkripsi gagal.\n");
             return 1;
@@ -626,7 +512,28 @@ int main(int argc, char *argv[]) {
     }
 
     if (strcmp(argv[1], "dec") == 0) {
-        Buffer ciphertext = hex_to_bytes(argv[5]);
+        Buffer ciphertext_hex = {NULL, 0};
+        Buffer ciphertext;
+
+        if (strcmp(argv[5], "-") == 0) {
+            ciphertext_hex = read_stdin_all();
+            if (ciphertext_hex.data == NULL) {
+                fprintf(stderr, "Gagal membaca ciphertext dari stdin.\n");
+                return 1;
+            }
+            trim_trailing_line_endings(&ciphertext_hex);
+        } else {
+            ciphertext_hex = clone_buffer((const uint8_t *)argv[5], strlen(argv[5]));
+        }
+
+        if (ciphertext_hex.data == NULL) {
+            fprintf(stderr, "Ciphertext hex tidak valid.\n");
+            return 1;
+        }
+
+        ciphertext = hex_to_bytes((const char *)ciphertext_hex.data);
+        free_buffer(&ciphertext_hex);
+
         if (ciphertext.data == NULL) {
             fprintf(stderr, "Ciphertext hex tidak valid.\n");
             return 1;
@@ -640,7 +547,11 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
-        printf("%.*s\n", (int)decrypted.len, decrypted.data);
+        if (fwrite(decrypted.data, 1, decrypted.len, stdout) != decrypted.len || fputc('\n', stdout) == EOF) {
+            fprintf(stderr, "Gagal menulis output.\n");
+            free_buffer(&decrypted);
+            return 1;
+        }
         free_buffer(&decrypted);
         return 0;
     }
