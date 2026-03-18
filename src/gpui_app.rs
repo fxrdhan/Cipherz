@@ -1,4 +1,6 @@
 use std::ops::Range;
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui::{
     App, Application, Bounds, ClickEvent, ClipboardItem, Context, CursorStyle, Div, ElementId,
@@ -796,6 +798,46 @@ impl BlockCipherApp {
         cx.notify();
     }
 
+    fn copy_encrypt_result(
+        &mut self,
+        _: &ClickEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.encrypt_result.is_empty() {
+            cx.write_to_clipboard(ClipboardItem::new_string(self.encrypt_result.clone()));
+        }
+    }
+
+    fn copy_decrypt_result(
+        &mut self,
+        _: &ClickEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.decrypt_result.is_empty() {
+            cx.write_to_clipboard(ClipboardItem::new_string(self.decrypt_result.clone()));
+        }
+    }
+
+    fn save_encrypt_result(
+        &mut self,
+        _: &ClickEvent,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        let _ = save_output_to_txt("ciphertext", &self.encrypt_result);
+    }
+
+    fn save_decrypt_result(
+        &mut self,
+        _: &ClickEvent,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        let _ = save_output_to_txt("plaintext", &self.decrypt_result);
+    }
+
     fn render_tab_button(
         &self,
         id: &'static str,
@@ -900,6 +942,59 @@ impl BlockCipherApp {
     }
 
     fn render_encrypt_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let mut action_children = vec![
+            action_button(
+                "Encrypt",
+                rgb(0xDCCCCF).into(),
+                rgb(0x474250).into(),
+                rgb(0xC7B6D9).into(),
+            )
+            .id("encrypt-now")
+            .on_click(cx.listener(Self::encrypt_now))
+            .into_any_element(),
+            action_button(
+                "Clear",
+                rgb(0xFFFDF9).into(),
+                rgb(0x7B7287).into(),
+                rgb(0xD1C2B7).into(),
+            )
+            .id("encrypt-clear")
+            .on_click(cx.listener(Self::clear_encrypt))
+            .into_any_element(),
+        ];
+
+        if !self.encrypt_result.is_empty() {
+            action_children.push(
+                div()
+                    .text_color(rgb(0xB7A79B))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child("|")
+                    .into_any_element(),
+            );
+            action_children.push(
+                action_button(
+                    "Copy",
+                    rgb(0xFFFDF9).into(),
+                    rgb(0x7B7287).into(),
+                    rgb(0xD1C2B7).into(),
+                )
+                .id("encrypt-copy")
+                .on_click(cx.listener(Self::copy_encrypt_result))
+                .into_any_element(),
+            );
+            action_children.push(
+                action_button(
+                    "Save",
+                    rgb(0xFFFDF9).into(),
+                    rgb(0x7B7287).into(),
+                    rgb(0xD1C2B7).into(),
+                )
+                .id("encrypt-save")
+                .on_click(cx.listener(Self::save_encrypt_result))
+                .into_any_element(),
+            );
+        }
+
         div()
             .flex()
             .flex_col()
@@ -911,32 +1006,67 @@ impl BlockCipherApp {
             .child(
                 div()
                     .flex()
+                    .items_center()
                     .gap_3()
-                    .child(
-                        action_button(
-                            "Encrypt",
-                            rgb(0xDCCCCF).into(),
-                            rgb(0x474250).into(),
-                            rgb(0xC7B6D9).into(),
-                        )
-                            .id("encrypt-now")
-                            .on_click(cx.listener(Self::encrypt_now)),
-                    )
-                    .child(
-                        action_button(
-                            "Clear",
-                            rgb(0xFFFDF9).into(),
-                            rgb(0x7B7287).into(),
-                            rgb(0xD1C2B7).into(),
-                        )
-                            .id("encrypt-clear")
-                            .on_click(cx.listener(Self::clear_encrypt)),
-                    ),
+                    .children(action_children),
             )
             .child(self.render_result_card("Ciphertext", &self.encrypt_result))
     }
 
     fn render_decrypt_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let mut action_children = vec![
+            action_button(
+                "Decrypt",
+                rgb(0xDCCCCF).into(),
+                rgb(0x474250).into(),
+                rgb(0xC7B6D9).into(),
+            )
+            .id("decrypt-now")
+            .on_click(cx.listener(Self::decrypt_now))
+            .into_any_element(),
+            action_button(
+                "Clear",
+                rgb(0xFFFDF9).into(),
+                rgb(0x7B7287).into(),
+                rgb(0xD1C2B7).into(),
+            )
+            .id("decrypt-clear")
+            .on_click(cx.listener(Self::clear_decrypt))
+            .into_any_element(),
+        ];
+
+        if !self.decrypt_result.is_empty() {
+            action_children.push(
+                div()
+                    .text_color(rgb(0xB7A79B))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child("|")
+                    .into_any_element(),
+            );
+            action_children.push(
+                action_button(
+                    "Copy",
+                    rgb(0xFFFDF9).into(),
+                    rgb(0x7B7287).into(),
+                    rgb(0xD1C2B7).into(),
+                )
+                .id("decrypt-copy")
+                .on_click(cx.listener(Self::copy_decrypt_result))
+                .into_any_element(),
+            );
+            action_children.push(
+                action_button(
+                    "Save",
+                    rgb(0xFFFDF9).into(),
+                    rgb(0x7B7287).into(),
+                    rgb(0xD1C2B7).into(),
+                )
+                .id("decrypt-save")
+                .on_click(cx.listener(Self::save_decrypt_result))
+                .into_any_element(),
+            );
+        }
+
         div()
             .flex()
             .flex_col()
@@ -948,31 +1078,12 @@ impl BlockCipherApp {
             .child(
                 div()
                     .flex()
+                    .items_center()
                     .gap_3()
-                    .child(
-                        action_button(
-                            "Decrypt",
-                            rgb(0xDCCCCF).into(),
-                            rgb(0x474250).into(),
-                            rgb(0xC7B6D9).into(),
-                        )
-                            .id("decrypt-now")
-                            .on_click(cx.listener(Self::decrypt_now)),
-                    )
-                    .child(
-                        action_button(
-                            "Clear",
-                            rgb(0xFFFDF9).into(),
-                            rgb(0x7B7287).into(),
-                            rgb(0xD1C2B7).into(),
-                        )
-                            .id("decrypt-clear")
-                            .on_click(cx.listener(Self::clear_decrypt)),
-                    ),
+                    .children(action_children),
             )
             .child(self.render_result_card("Plaintext", &self.decrypt_result))
     }
-
 }
 
 impl Render for BlockCipherApp {
@@ -1130,6 +1241,20 @@ fn action_button(label: &'static str, color: Hsla, text_color: Hsla, border_colo
         .text_color(text_color)
         .font_weight(gpui::FontWeight::SEMIBOLD)
         .child(label)
+}
+
+fn save_output_to_txt(prefix: &str, content: &str) -> std::io::Result<PathBuf> {
+    if content.is_empty() {
+        return Ok(std::env::current_dir()?.join(format!("{prefix}_empty.txt")));
+    }
+
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let path = std::env::current_dir()?.join(format!("{prefix}_{timestamp}.txt"));
+    std::fs::write(&path, content)?;
+    Ok(path)
 }
 
 fn hex_value(c: u8) -> Option<u8> {
