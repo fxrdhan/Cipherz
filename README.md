@@ -1,21 +1,34 @@
-# Tugas Block Cipher C
+# Tugas Block Cipher C dan Rust
 
-Implementasi ini dibuat tanpa library kriptografi. Cipher yang dipakai adalah cipher blok sederhana berbasis jaringan Feistel dengan:
+Repo ini berisi implementasi block cipher edukatif yang dibuat tanpa library kriptografi siap pakai. Cipher yang dipakai adalah block cipher sederhana berbasis jaringan Feistel dengan:
 
 - ukuran blok 64 bit (8 byte)
 - ukuran kunci 128 bit (16 byte)
 - 8 ronde
-- dua fungsi dasar utama: XOR dan substitusi S-Box
-- fungsi tambahan rotasi/permutasi bit pada round function
+- fungsi dasar utama XOR dan substitusi S-Box
+- fungsi tambahan rotasi dan permutasi bit pada round function
 
-Mode operasi yang tersedia:
+Mode operasi yang saat ini diimplementasikan:
 
 - CBC
 - CFB
 - OFB
-- CTR
 
-Empat mode operasi yang dipakai adalah `CBC`, `CFB`, `OFB`, dan `CTR`.
+Implementasi ini tidak menyalin DES atau AES penuh, tetapi mengikuti konsep block cipher, mode operasi, Feistel network, XOR, dan substitusi yang dibahas di materi kuliah.
+
+## Isi repo
+
+Repo ini memuat dua implementasi yang setara secara inti algoritma:
+
+- implementasi C CLI di `main.c`
+- implementasi Rust CLI dan GUI di `src/lib.rs`, `src/main.rs`, dan `src/gpui_app.rs`
+
+Input yang didukung saat ini adalah teks langsung:
+
+- argumen command line pada implementasi C dan Rust
+- field teks pada GUI Rust
+
+Input file `.txt` atau file biner belum diimplementasikan pada versi repo ini.
 
 ## Kaitan dengan PPT
 
@@ -24,41 +37,35 @@ Empat mode operasi yang dipakai adalah `CBC`, `CFB`, `OFB`, dan `CTR`.
 - jaringan Feistel: slide 15-17
 - fungsi substitusi dan XOR ala DES: slide 25-30
 
-Implementasi ini tidak menyalin DES atau AES penuh, tetapi mengikuti ide yang dijelaskan di slide: data dibagi per blok, diproses per ronde, memakai XOR, substitusi, dan perubahan posisi bit.
-
-## Build
+## Build implementasi C
 
 ```bash
 make
 ```
 
-## Menjalankan demo
+Binary yang dihasilkan:
 
 ```bash
-./block_cipher demo
+./block_cipher
 ```
 
-Demo akan menampilkan hasil enkripsi dan dekripsi untuk semua mode yang dipakai.
-
-## Menjalankan benchmark
+## Build implementasi Rust
 
 ```bash
-./block_cipher bench
+cargo build
 ```
 
-Benchmark akan mengukur performa enkripsi dan dekripsi untuk `CBC`, `CFB`, `OFB`, dan `CTR`.
-
-Untuk menghasilkan metrik komprehensif dan line chart dalam Python:
+Menjalankan CLI Rust:
 
 ```bash
-python3 benchmark_metrics.py
+cargo run -- enc cbc "KAMSIS-KEY-2026!" "IV2026!!" "halo dunia"
 ```
 
-Output yang dihasilkan:
+Menjalankan GUI Rust:
 
-- `benchmark_results.csv`
-- `benchmark_summary.csv`
-- `benchmark_dashboard.png`
+```bash
+cargo run -- ui
+```
 
 ## Menjalankan manual
 
@@ -81,19 +88,71 @@ Contoh:
 ./block_cipher dec cbc "KAMSIS-KEY-2026!" "IV2026!!" "<hex hasil enkripsi>"
 ```
 
+Mode yang valid:
+
+- `cbc`
+- `cfb`
+- `ofb`
+
 Catatan:
 
-- key memakai 16 karakter pertama
-- IV/nonce memakai 8 karakter pertama
+- key diambil dari 16 karakter pertama
+- IV diambil dari 8 karakter pertama
 - CBC memakai padding PKCS#7
-- CFB, OFB, dan CTR diproses sebagai stream berbasis blok sehingga tidak memerlukan padding
+- CFB dan OFB diproses secara stream berbasis blok sehingga tidak memerlukan padding
+
+## Benchmark
+
+Benchmark bawaan pada CLI C:
+
+```bash
+./block_cipher bench
+```
+
+Benchmark bawaan pada CLI Rust:
+
+```bash
+cargo run -- bench
+```
+
+Untuk menghasilkan metrik komprehensif dan dashboard benchmark C vs Rust:
+
+```bash
+python3 benchmark_metrics.py
+```
+
+Script benchmark saat ini hanya mengukur mode yang benar-benar tersedia di kode:
+
+- `CBC`
+- `CFB`
+- `OFB`
+
+Output yang dihasilkan:
+
+- `benchmark_results.csv`
+- `benchmark_summary.csv`
+- `benchmark_dashboard.png`
+
+## Pengujian
+
+Menjalankan test Rust:
+
+```bash
+cargo test
+```
+
+Test yang ada saat ini memverifikasi:
+
+- kesesuaian ciphertext hasil implementasi Rust terhadap implementasi C
+- validasi kegagalan padding untuk mode CBC
 
 ## Struktur program
 
-- `encrypt_block()` dan `decrypt_block()` mengerjakan enkripsi/dekripsi satu blok dengan Feistel
-- `round_function()` memakai XOR, S-Box, dan rotasi bit
+- `encrypt_block()` dan `decrypt_block()` mengerjakan enkripsi dan dekripsi satu blok dengan Feistel
+- `round_function()` memakai XOR, S-Box, dan rotasi atau permutasi bit
 - `encrypt_message()` dan `decrypt_message()` menangani mode operasi
+- `benchmark_metrics.py` membandingkan throughput dan latensi implementasi C dan Rust
 
 ## Catatan akademik
 
-Cipher ini bersifat edukatif untuk memenuhi tugas kuliah. Ini bukan pengganti algoritma standar seperti AES untuk sistem produksi.
+Cipher ini bersifat edukatif untuk memenuhi tugas kuliah. Implementasi ini bukan pengganti algoritma standar seperti AES untuk sistem produksi.

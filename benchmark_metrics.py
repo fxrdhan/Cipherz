@@ -35,13 +35,12 @@ DEFAULT_SIZES = [
     4 * 1024 * 1024,
 ]
 
-MODES = ["cbc", "cfb", "ofb", "ctr"]
+MODES = ["cbc", "cfb", "ofb"]
 OPERATIONS = ["encrypt", "decrypt"]
 COLORS = {
     "cbc": "#1d4ed8",
     "cfb": "#dc2626",
     "ofb": "#16a34a",
-    "ctr": "#7c3aed",
 }
 IMPLEMENTATIONS = {
     "c": {
@@ -416,7 +415,7 @@ def render_dashboard(
     mode_legend = fig.legend(
         handles=mode_handles,
         loc="upper center",
-        ncol=4,
+        ncol=len(MODES),
         frameon=False,
         bbox_to_anchor=(0.28, 0.935),
         fontsize=11,
