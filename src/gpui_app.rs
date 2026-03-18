@@ -67,6 +67,7 @@ const TEXTAREA_VISIBLE_LINES: usize = 6;
 const TEXTAREA_VERTICAL_PADDING: f32 = 12.0;
 const TEXTAREA_MAX_HEIGHT: f32 =
     TEXT_LINE_HEIGHT * TEXTAREA_VISIBLE_LINES as f32 + (TEXTAREA_VERTICAL_PADDING * 2.0);
+const RESULT_VIEW_HEIGHT: f32 = 160.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum TextInputDisplayMode {
@@ -365,7 +366,7 @@ impl TextInput {
         self.clamp_scroll(bounds.size.height);
         let delta = event.delta.pixel_delta(px(20.)).y;
         self.scroll_y =
-            (self.scroll_y + delta).clamp(Pixels::ZERO, self.max_scroll(bounds.size.height));
+            (self.scroll_y - delta).clamp(Pixels::ZERO, self.max_scroll(bounds.size.height));
         cx.notify();
     }
 
@@ -1187,6 +1188,199 @@ impl Focusable for TextInput {
     }
 }
 
+struct ScrollTextView {
+    content: String,
+    last_bounds: Option<Bounds<Pixels>>,
+    last_line_height: Pixels,
+    last_wrapped_lines: Vec<WrappedLine>,
+    content_height: Pixels,
+    scroll_y: Pixels,
+}
+
+impl ScrollTextView {
+    fn new(cx: &mut App) -> Entity<Self> {
+        cx.new(|_| Self {
+            content: String::new(),
+            last_bounds: None,
+            last_line_height: px(TEXT_LINE_HEIGHT),
+            last_wrapped_lines: Vec::new(),
+            content_height: Pixels::ZERO,
+            scroll_y: Pixels::ZERO,
+        })
+    }
+
+    fn set_content(&mut self, content: impl Into<String>, cx: &mut Context<Self>) {
+        self.content = content.into();
+        self.scroll_y = Pixels::ZERO;
+        cx.notify();
+    }
+
+    fn max_scroll(&self, viewport_height: Pixels) -> Pixels {
+        (self.content_height - viewport_height).max(Pixels::ZERO)
+    }
+
+    fn on_scroll(
+        &mut self,
+        event: &ScrollWheelEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(bounds) = self.last_bounds else {
+            return;
+        };
+
+        let delta = event.delta.pixel_delta(px(20.)).y;
+        self.scroll_y =
+            (self.scroll_y - delta).clamp(Pixels::ZERO, self.max_scroll(bounds.size.height));
+        cx.notify();
+    }
+}
+
+struct ScrollTextViewElement {
+    view: Entity<ScrollTextView>,
+}
+
+struct ScrollTextViewPrepaint {
+    wrapped_lines: Vec<WrappedLine>,
+    content_height: Pixels,
+    scroll_y: Pixels,
+    line_height: Pixels,
+}
+
+impl IntoElement for ScrollTextViewElement {
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+impl Element for ScrollTextViewElement {
+    type RequestLayoutState = ();
+    type PrepaintState = ScrollTextViewPrepaint;
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&gpui::InspectorElementId>,
+        _window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let mut style = Style::default();
+        style.size.width = relative(1.).into();
+        style.size.height = relative(1.).into();
+        (_window.request_layout(style, [], cx), ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&gpui::InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Self::PrepaintState {
+        let view = self.view.read(cx);
+        let content = if view.content.is_empty() {
+            "-".to_string()
+        } else {
+            view.content.clone()
+        };
+        let text_style = window.text_style();
+        let line_height = px(TEXT_LINE_HEIGHT);
+        let font_size = text_style.font_size.to_pixels(window.rem_size());
+        let runs = [TextRun {
+            len: content.len(),
+            font: text_style.font(),
+            color: rgb(0x4E4A59).into(),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        }];
+        let wrapped_lines = window
+            .text_system()
+            .shape_text(
+                content.into(),
+                font_size,
+                &runs,
+                Some(bounds.size.width),
+                None,
+            )
+            .map(|lines| lines.into_iter().collect::<Vec<_>>())
+            .unwrap_or_default();
+        let content_height = wrapped_lines_content_height(&wrapped_lines, line_height);
+        let scroll_y = view.scroll_y.clamp(
+            Pixels::ZERO,
+            (content_height - bounds.size.height).max(Pixels::ZERO),
+        );
+
+        ScrollTextViewPrepaint {
+            wrapped_lines,
+            content_height,
+            scroll_y,
+            line_height,
+        }
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&gpui::InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        window.with_content_mask(Some(ContentMask { bounds }), |window| {
+            window.paint_layer(bounds, |window| {
+                let mut line_origin = point(bounds.left(), bounds.top() - prepaint.scroll_y);
+                for line in &prepaint.wrapped_lines {
+                    line.paint(
+                        line_origin,
+                        prepaint.line_height,
+                        TextAlign::Left,
+                        None,
+                        window,
+                        cx,
+                    )
+                    .expect("paint wrapped output");
+                    line_origin.y += line.size(prepaint.line_height).height;
+                }
+            });
+        });
+
+        let wrapped_lines = std::mem::take(&mut prepaint.wrapped_lines);
+        self.view.update(cx, |view, _cx| {
+            view.last_bounds = Some(bounds);
+            view.last_line_height = prepaint.line_height;
+            view.content_height = prepaint.content_height;
+            view.scroll_y = prepaint.scroll_y;
+            view.last_wrapped_lines = wrapped_lines;
+        });
+    }
+}
+
+impl Render for ScrollTextView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .w_full()
+            .h(px(RESULT_VIEW_HEIGHT))
+            .pr_2()
+            .on_scroll_wheel(cx.listener(Self::on_scroll))
+            .child(ScrollTextViewElement { view: cx.entity() })
+    }
+}
+
 struct BlockCipherApp {
     active_tab: UiTab,
     selected_mode: CipherMode,
@@ -1196,6 +1390,8 @@ struct BlockCipherApp {
     decrypt_key: Entity<TextInput>,
     decrypt_iv: Entity<TextInput>,
     decrypt_ciphertext: Entity<TextInput>,
+    encrypt_result_view: Entity<ScrollTextView>,
+    decrypt_result_view: Entity<ScrollTextView>,
     encrypt_result: String,
     decrypt_result: String,
     encrypt_copy_done_until: Option<Instant>,
@@ -1254,6 +1450,8 @@ impl BlockCipherApp {
                 label: "Ciphertext",
             },
         );
+        let encrypt_result_view = ScrollTextView::new(cx);
+        let decrypt_result_view = ScrollTextView::new(cx);
 
         encrypt_key.update(cx, |input, cx| input.set_value("", cx));
         encrypt_iv.update(cx, |input, cx| input.set_value("", cx));
@@ -1270,6 +1468,8 @@ impl BlockCipherApp {
             decrypt_key,
             decrypt_iv,
             decrypt_ciphertext,
+            encrypt_result_view,
+            decrypt_result_view,
             encrypt_result: String::new(),
             decrypt_result: String::new(),
             encrypt_copy_done_until: None,
@@ -1302,6 +1502,8 @@ impl BlockCipherApp {
             self.encrypt_iv
                 .update(cx, |input, cx| input.reveal_validation(cx));
             self.encrypt_result.clear();
+            self.encrypt_result_view
+                .update(cx, |view, cx| view.set_content("", cx));
             self.encrypt_copy_done_until = None;
             cx.notify();
             return;
@@ -1312,6 +1514,9 @@ impl BlockCipherApp {
         let encrypted = encrypt_message(self.selected_mode, plaintext.as_bytes(), &key, &iv);
 
         self.encrypt_result = hex_string(&encrypted);
+        self.encrypt_result_view.update(cx, |view, cx| {
+            view.set_content(self.encrypt_result.clone(), cx)
+        });
         self.encrypt_copy_done_until = None;
         self.decrypt_ciphertext.update(cx, |input, cx| {
             input.set_value(self.encrypt_result.clone(), cx)
@@ -1336,6 +1541,8 @@ impl BlockCipherApp {
             self.decrypt_iv
                 .update(cx, |input, cx| input.reveal_validation(cx));
             self.decrypt_result.clear();
+            self.decrypt_result_view
+                .update(cx, |view, cx| view.set_content("", cx));
             self.decrypt_copy_done_until = None;
             cx.notify();
             return;
@@ -1343,6 +1550,8 @@ impl BlockCipherApp {
 
         let Some(ciphertext) = hex_to_bytes(&ciphertext_text) else {
             self.decrypt_result.clear();
+            self.decrypt_result_view
+                .update(cx, |view, cx| view.set_content("", cx));
             self.decrypt_copy_done_until = None;
             cx.notify();
             return;
@@ -1352,12 +1561,17 @@ impl BlockCipherApp {
         let iv = derive_bytes::<BLOCK_SIZE>(&iv_text);
         let Some(plaintext) = decrypt_message(self.selected_mode, &ciphertext, &key, &iv) else {
             self.decrypt_result.clear();
+            self.decrypt_result_view
+                .update(cx, |view, cx| view.set_content("", cx));
             self.decrypt_copy_done_until = None;
             cx.notify();
             return;
         };
 
         self.decrypt_result = String::from_utf8_lossy(&plaintext).into_owned();
+        self.decrypt_result_view.update(cx, |view, cx| {
+            view.set_content(self.decrypt_result.clone(), cx)
+        });
         self.decrypt_copy_done_until = None;
         cx.notify();
     }
@@ -1366,6 +1580,8 @@ impl BlockCipherApp {
         self.encrypt_plaintext
             .update(cx, |input, cx| input.clear(cx));
         self.encrypt_result.clear();
+        self.encrypt_result_view
+            .update(cx, |view, cx| view.set_content("", cx));
         self.encrypt_copy_done_until = None;
         cx.notify();
     }
@@ -1374,6 +1590,8 @@ impl BlockCipherApp {
         self.decrypt_ciphertext
             .update(cx, |input, cx| input.clear(cx));
         self.decrypt_result.clear();
+        self.decrypt_result_view
+            .update(cx, |view, cx| view.set_content("", cx));
         self.decrypt_copy_done_until = None;
         cx.notify();
     }
@@ -1568,29 +1786,15 @@ impl BlockCipherApp {
             .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| view.set_mode(mode, cx)))
     }
 
-    fn render_result_card(&self, title: &str, body: &str) -> impl IntoElement {
+    fn render_result_card(
+        &self,
+        title: &str,
+        body: &str,
+        scroll_view: Entity<ScrollTextView>,
+    ) -> impl IntoElement {
         let should_scroll = body.lines().count() > 4 || body.len() > 160;
-        let scroll_id = if title == "Ciphertext" {
-            "ciphertext-output-scroll"
-        } else {
-            "plaintext-output-scroll"
-        };
         let body_element = if should_scroll {
-            div()
-                .id(scroll_id)
-                .pt_1()
-                .w_full()
-                .h(px(160.))
-                .overflow_y_scroll()
-                .pr_2()
-                .text_color(rgb(0x4E4A59))
-                .text_sm()
-                .child(if body.is_empty() {
-                    "-".to_string()
-                } else {
-                    body.to_string()
-                })
-                .into_any_element()
+            div().pt_1().w_full().child(scroll_view).into_any_element()
         } else {
             div()
                 .pt_1()
@@ -1758,7 +1962,11 @@ impl BlockCipherApp {
                     .gap_3()
                     .children(action_children),
             )
-            .child(self.render_result_card("Ciphertext", &self.encrypt_result))
+            .child(self.render_result_card(
+                "Ciphertext",
+                &self.encrypt_result,
+                self.encrypt_result_view.clone(),
+            ))
     }
 
     fn render_decrypt_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1882,7 +2090,11 @@ impl BlockCipherApp {
                     .gap_3()
                     .children(action_children),
             )
-            .child(self.render_result_card("Plaintext", &self.decrypt_result))
+            .child(self.render_result_card(
+                "Plaintext",
+                &self.decrypt_result,
+                self.decrypt_result_view.clone(),
+            ))
     }
 }
 
