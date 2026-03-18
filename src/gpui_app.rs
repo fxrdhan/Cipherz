@@ -3,12 +3,13 @@ use std::ops::Range;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use gpui::{
-    App, Application, Bounds, ClickEvent, ClipboardItem, Context, CursorStyle, Div, ElementId,
-    ElementInputHandler, Entity, EntityInputHandler, FocusHandle, Focusable, GlobalElementId, Hsla,
-    KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
-    Pixels, Point, ShapedLine, SharedString, StatefulInteractiveElement, Style, TextRun,
-    UTF16Selection, UnderlineStyle, Window, WindowBounds, WindowOptions, actions, div, fill, point,
-    prelude::*, px, relative, rgb, rgba, size,
+    App, Application, Bounds, ClickEvent, ClipboardItem, ContentMask, Context, CursorStyle, Div,
+    ElementId, ElementInputHandler, Entity, EntityInputHandler, FocusHandle, Focusable,
+    GlobalElementId, Hsla, KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, PaintQuad, Pixels, Point, ScrollWheelEvent, ShapedLine, SharedString,
+    StatefulInteractiveElement, Style, TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window,
+    WindowBounds, WindowOptions, WrappedLine, actions, div, fill, point, prelude::*, px, relative,
+    rgb, rgba, size,
 };
 use rfd::FileDialog;
 use unicode_segmentation::UnicodeSegmentation;
@@ -61,6 +62,17 @@ const MODE_OPTIONS: [ModeOption; 3] = [
 ];
 
 const CONTROL_HEIGHT: f32 = 48.0;
+const TEXT_LINE_HEIGHT: f32 = 22.0;
+const TEXTAREA_VISIBLE_LINES: usize = 6;
+const TEXTAREA_VERTICAL_PADDING: f32 = 12.0;
+const TEXTAREA_MAX_HEIGHT: f32 =
+    TEXT_LINE_HEIGHT * TEXTAREA_VISIBLE_LINES as f32 + (TEXTAREA_VERTICAL_PADDING * 2.0);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TextInputDisplayMode {
+    SingleLine,
+    WrappedTextarea,
+}
 
 #[derive(Clone)]
 struct TextInputStyle {
@@ -108,11 +120,16 @@ struct TextInput {
     selection_reversed: bool,
     marked_range: Option<Range<usize>>,
     last_layout: Option<ShapedLine>,
+    last_wrapped_lines: Option<Vec<WrappedLine>>,
     last_bounds: Option<Bounds<Pixels>>,
+    last_line_height: Pixels,
+    content_height: Pixels,
     is_selecting: bool,
     style: TextInputStyle,
     validator: TextInputValidator,
     reveal_validation_on_empty: bool,
+    display_mode: TextInputDisplayMode,
+    scroll_y: Pixels,
 }
 
 impl TextInput {
@@ -131,11 +148,44 @@ impl TextInput {
             selection_reversed: false,
             marked_range: None,
             last_layout: None,
+            last_wrapped_lines: None,
             last_bounds: None,
+            last_line_height: Pixels::ZERO,
+            content_height: Pixels::ZERO,
             is_selecting: false,
             style: TextInputStyle::light(),
             validator,
             reveal_validation_on_empty: false,
+            display_mode: TextInputDisplayMode::SingleLine,
+            scroll_y: Pixels::ZERO,
+        })
+    }
+
+    fn new_multiline(
+        window: &Window,
+        cx: &mut App,
+        placeholder: &str,
+        validator: TextInputValidator,
+    ) -> Entity<Self> {
+        let _ = window;
+        cx.new(|cx| Self {
+            focus_handle: cx.focus_handle(),
+            content: String::new(),
+            placeholder: placeholder.to_string(),
+            selected_range: 0..0,
+            selection_reversed: false,
+            marked_range: None,
+            last_layout: None,
+            last_wrapped_lines: None,
+            last_bounds: None,
+            last_line_height: Pixels::ZERO,
+            content_height: Pixels::ZERO,
+            is_selecting: false,
+            style: TextInputStyle::light(),
+            validator,
+            reveal_validation_on_empty: false,
+            display_mode: TextInputDisplayMode::WrappedTextarea,
+            scroll_y: Pixels::ZERO,
         })
     }
 
@@ -150,12 +200,45 @@ impl TextInput {
         cx.notify();
     }
 
+    fn set_value_from_top(&mut self, value: impl Into<String>, cx: &mut Context<Self>) {
+        let value = value.into();
+        self.content = sanitize_single_line_text(&value);
+        self.reveal_validation_on_empty = !self.content.is_empty();
+        self.selected_range = 0..0;
+        self.selection_reversed = false;
+        self.marked_range = None;
+        self.scroll_y = Pixels::ZERO;
+        cx.notify();
+    }
+
     fn value(&self) -> String {
         self.content.clone()
     }
 
     fn clear(&mut self, cx: &mut Context<Self>) {
         self.set_value(String::new(), cx);
+    }
+
+    fn is_multiline(&self) -> bool {
+        self.display_mode == TextInputDisplayMode::WrappedTextarea
+    }
+
+    fn field_height(&self) -> Pixels {
+        if self.is_multiline() {
+            px(TEXTAREA_MAX_HEIGHT)
+        } else {
+            px(CONTROL_HEIGHT)
+        }
+    }
+
+    fn max_scroll(&self, viewport_height: Pixels) -> Pixels {
+        (self.content_height - viewport_height).max(Pixels::ZERO)
+    }
+
+    fn clamp_scroll(&mut self, viewport_height: Pixels) {
+        self.scroll_y = self
+            .scroll_y
+            .clamp(Pixels::ZERO, self.max_scroll(viewport_height));
     }
 
     fn reveal_validation(&mut self, cx: &mut Context<Self>) {
@@ -265,6 +348,27 @@ impl TextInput {
         }
     }
 
+    fn on_scroll(
+        &mut self,
+        event: &ScrollWheelEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.is_multiline() {
+            return;
+        }
+
+        let Some(bounds) = self.last_bounds else {
+            return;
+        };
+
+        self.clamp_scroll(bounds.size.height);
+        let delta = event.delta.pixel_delta(px(20.)).y;
+        self.scroll_y =
+            (self.scroll_y + delta).clamp(Pixels::ZERO, self.max_scroll(bounds.size.height));
+        cx.notify();
+    }
+
     fn show_character_palette(
         &mut self,
         _: &ShowCharacterPalette,
@@ -313,6 +417,21 @@ impl TextInput {
     fn index_for_mouse_position(&self, position: Point<Pixels>) -> usize {
         if self.content.is_empty() {
             return 0;
+        }
+
+        if self.is_multiline() {
+            let (Some(bounds), Some(lines)) =
+                (self.last_bounds.as_ref(), self.last_wrapped_lines.as_ref())
+            else {
+                return 0;
+            };
+
+            let local = point(
+                (position.x - bounds.left()).max(Pixels::ZERO),
+                (position.y - bounds.top() + self.scroll_y).max(Pixels::ZERO),
+            );
+            return wrapped_lines_index_for_position(lines, local, self.last_line_height)
+                .min(self.content.len());
         }
 
         let (Some(bounds), Some(line)) = (self.last_bounds.as_ref(), self.last_layout.as_ref())
@@ -393,6 +512,169 @@ impl TextInput {
             .find_map(|(idx, _)| (idx > offset).then_some(idx))
             .unwrap_or(self.content.len())
     }
+
+    fn position_for_index(&self, index: usize) -> Option<Point<Pixels>> {
+        if self.is_multiline() {
+            return wrapped_lines_position_for_index(
+                self.last_wrapped_lines.as_deref()?,
+                index,
+                self.last_line_height,
+            );
+        }
+
+        let line = self.last_layout.as_ref()?;
+        Some(point(line.x_for_index(index), Pixels::ZERO))
+    }
+}
+
+fn wrapped_lines_content_height(lines: &[WrappedLine], line_height: Pixels) -> Pixels {
+    lines.iter().fold(Pixels::ZERO, |height, line| {
+        height + line.size(line_height).height
+    })
+}
+
+fn wrapped_lines_position_for_index(
+    lines: &[WrappedLine],
+    index: usize,
+    line_height: Pixels,
+) -> Option<Point<Pixels>> {
+    let mut line_origin_y = Pixels::ZERO;
+    let mut line_start_ix = 0;
+
+    for line in lines {
+        let line_end_ix = line_start_ix + line.len();
+        if index <= line_end_ix {
+            let relative_index = index.saturating_sub(line_start_ix);
+            let position = line.position_for_index(relative_index, line_height)?;
+            return Some(point(position.x, line_origin_y + position.y));
+        }
+        line_origin_y += line.size(line_height).height;
+        line_start_ix = line_end_ix;
+    }
+
+    lines.last().and_then(|line| {
+        line.position_for_index(line.len(), line_height)
+            .map(|position| {
+                point(
+                    position.x,
+                    line_origin_y - line.size(line_height).height + position.y,
+                )
+            })
+    })
+}
+
+fn wrapped_lines_index_for_position(
+    lines: &[WrappedLine],
+    position: Point<Pixels>,
+    line_height: Pixels,
+) -> usize {
+    let mut line_origin_y = Pixels::ZERO;
+    let mut line_start_ix = 0;
+
+    for line in lines {
+        let line_height_total = line.size(line_height).height;
+        let line_end_ix = line_start_ix + line.len();
+        if position.y <= line_origin_y + line_height_total {
+            let local_position = point(position.x, (position.y - line_origin_y).max(Pixels::ZERO));
+            let relative_index = line
+                .closest_index_for_position(local_position, line_height)
+                .unwrap_or_else(|index| index);
+            return line_start_ix + relative_index;
+        }
+        line_origin_y += line_height_total;
+        line_start_ix = line_end_ix;
+    }
+
+    line_start_ix
+}
+
+fn wrapped_lines_cursor_quad(
+    lines: &[WrappedLine],
+    cursor: usize,
+    bounds: Bounds<Pixels>,
+    line_height: Pixels,
+    scroll_y: Pixels,
+    color: Hsla,
+) -> Option<PaintQuad> {
+    let cursor_position = wrapped_lines_position_for_index(lines, cursor, line_height)?;
+    Some(fill(
+        Bounds::new(
+            point(
+                bounds.left() + cursor_position.x,
+                bounds.top() + cursor_position.y - scroll_y,
+            ),
+            size(px(2.), line_height),
+        ),
+        color,
+    ))
+}
+
+fn wrapped_lines_selection_quads(
+    lines: &[WrappedLine],
+    selected_range: &Range<usize>,
+    bounds: Bounds<Pixels>,
+    line_height: Pixels,
+    scroll_y: Pixels,
+    color: Hsla,
+) -> Vec<PaintQuad> {
+    if selected_range.is_empty() {
+        return Vec::new();
+    }
+
+    let mut quads = Vec::new();
+    let mut line_origin_y = Pixels::ZERO;
+    let mut line_start_ix = 0;
+
+    for line in lines {
+        let line_end_ix = line_start_ix + line.len();
+        if selected_range.end <= line_start_ix || selected_range.start >= line_end_ix {
+            line_origin_y += line.size(line_height).height;
+            line_start_ix = line_end_ix;
+            continue;
+        }
+
+        let selection_start = selected_range.start.max(line_start_ix) - line_start_ix;
+        let selection_end = selected_range.end.min(line_end_ix) - line_start_ix;
+        let Some(start_position) = line.position_for_index(selection_start, line_height) else {
+            line_origin_y += line.size(line_height).height;
+            line_start_ix = line_end_ix;
+            continue;
+        };
+        let Some(end_position) = line.position_for_index(selection_end, line_height) else {
+            line_origin_y += line.size(line_height).height;
+            line_start_ix = line_end_ix;
+            continue;
+        };
+
+        let start_visual_line = (start_position.y / line_height) as usize;
+        let end_visual_line = (end_position.y / line_height) as usize;
+
+        for visual_line in start_visual_line..=end_visual_line {
+            let y = bounds.top() + line_origin_y + line_height * visual_line - scroll_y;
+            let x1 = if visual_line == start_visual_line {
+                start_position.x
+            } else {
+                Pixels::ZERO
+            };
+            let x2 = if visual_line == end_visual_line {
+                end_position.x
+            } else {
+                line.width()
+            };
+
+            if x2 > x1 {
+                quads.push(fill(
+                    Bounds::new(point(bounds.left() + x1, y), size(x2 - x1, line_height)),
+                    color,
+                ));
+            }
+        }
+
+        line_origin_y += line.size(line_height).height;
+        line_start_ix = line_end_ix;
+    }
+
+    quads
 }
 
 impl EntityInputHandler for TextInput {
@@ -500,8 +782,19 @@ impl EntityInputHandler for TextInput {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
-        let last_layout = self.last_layout.as_ref()?;
         let range = self.range_from_utf16(&range_utf16);
+        if self.is_multiline() {
+            let start = self.position_for_index(range.start)?;
+            let end = self.position_for_index(range.end)?;
+            let top = bounds.top() + start.y - self.scroll_y;
+            let bottom = bounds.top() + end.y + self.last_line_height - self.scroll_y;
+            return Some(Bounds::from_corners(
+                point(bounds.left() + start.x, top),
+                point(bounds.left() + end.x.max(start.x + px(2.)), bottom),
+            ));
+        }
+
+        let last_layout = self.last_layout.as_ref()?;
         Some(Bounds::from_corners(
             point(
                 bounds.left() + last_layout.x_for_index(range.start),
@@ -520,9 +813,13 @@ impl EntityInputHandler for TextInput {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<usize> {
-        let line_point = self.last_bounds?.localize(&point)?;
-        let last_layout = self.last_layout.as_ref()?;
-        let utf8_index = last_layout.index_for_x(point.x - line_point.x)?;
+        let utf8_index = if self.is_multiline() {
+            self.index_for_mouse_position(point)
+        } else {
+            let line_point = self.last_bounds?.localize(&point)?;
+            let last_layout = self.last_layout.as_ref()?;
+            last_layout.index_for_x(point.x - line_point.x)?
+        };
         Some(self.offset_to_utf16(utf8_index))
     }
 }
@@ -533,8 +830,12 @@ struct TextInputElement {
 
 struct TextInputPrepaint {
     line: Option<ShapedLine>,
+    wrapped_lines: Option<Vec<WrappedLine>>,
     cursor: Option<PaintQuad>,
-    selection: Option<PaintQuad>,
+    selections: Vec<PaintQuad>,
+    content_height: Pixels,
+    scroll_y: Pixels,
+    line_height: Pixels,
 }
 
 impl IntoElement for TextInputElement {
@@ -564,9 +865,14 @@ impl Element for TextInputElement {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
+        let is_multiline = self.input.read(cx).is_multiline();
         let mut style = Style::default();
         style.size.width = relative(1.).into();
-        style.size.height = window.line_height().into();
+        style.size.height = if is_multiline {
+            relative(1.).into()
+        } else {
+            px(TEXT_LINE_HEIGHT).into()
+        };
         (window.request_layout(style, [], cx), ())
     }
 
@@ -584,6 +890,7 @@ impl Element for TextInputElement {
         let selected_range = input.selected_range.clone();
         let cursor = input.cursor_offset();
         let style = window.text_style();
+        let line_height = px(TEXT_LINE_HEIGHT);
 
         let (display_text, text_color) = if content.is_empty() {
             (input.placeholder.clone(), input.style.placeholder)
@@ -628,45 +935,111 @@ impl Element for TextInputElement {
 
         let font_size = style.font_size.to_pixels(window.rem_size());
         let display_text: SharedString = display_text.into();
-        let line = window
-            .text_system()
-            .shape_line(display_text, font_size, &runs, None);
+        if input.is_multiline() {
+            let lines = window
+                .text_system()
+                .shape_text(
+                    display_text,
+                    font_size,
+                    &runs,
+                    Some(bounds.size.width),
+                    None,
+                )
+                .map(|lines| lines.into_iter().collect::<Vec<_>>())
+                .unwrap_or_default();
+            let content_height = wrapped_lines_content_height(&lines, line_height);
+            let max_scroll = (content_height - bounds.size.height).max(Pixels::ZERO);
+            let mut scroll_y = input.scroll_y.clamp(Pixels::ZERO, max_scroll);
 
-        let cursor_pos = line.x_for_index(cursor);
-        let (selection, cursor) = if selected_range.is_empty() {
-            (
-                None,
-                Some(fill(
-                    Bounds::new(
-                        point(bounds.left() + cursor_pos, bounds.top()),
-                        size(px(2.), bounds.bottom() - bounds.top()),
-                    ),
-                    input.style.cursor,
-                )),
-            )
-        } else {
-            (
-                Some(fill(
-                    Bounds::from_corners(
-                        point(
-                            bounds.left() + line.x_for_index(selected_range.start),
-                            bounds.top(),
-                        ),
-                        point(
-                            bounds.left() + line.x_for_index(selected_range.end),
-                            bounds.bottom(),
-                        ),
-                    ),
+            if let Some(cursor_pos) = wrapped_lines_position_for_index(&lines, cursor, line_height)
+            {
+                if cursor_pos.y < scroll_y {
+                    scroll_y = cursor_pos.y;
+                } else if cursor_pos.y + line_height > scroll_y + bounds.size.height {
+                    scroll_y = (cursor_pos.y + line_height - bounds.size.height)
+                        .clamp(Pixels::ZERO, max_scroll);
+                }
+            }
+
+            let selections = if selected_range.is_empty() {
+                Vec::new()
+            } else {
+                wrapped_lines_selection_quads(
+                    &lines,
+                    &selected_range,
+                    bounds,
+                    line_height,
+                    scroll_y,
                     input.style.selection,
-                )),
-                None,
-            )
-        };
+                )
+            };
+            let cursor_quad = if selected_range.is_empty() {
+                wrapped_lines_cursor_quad(
+                    &lines,
+                    cursor,
+                    bounds,
+                    line_height,
+                    scroll_y,
+                    input.style.cursor,
+                )
+            } else {
+                None
+            };
 
-        TextInputPrepaint {
-            line: Some(line),
-            cursor,
-            selection,
+            TextInputPrepaint {
+                line: None,
+                wrapped_lines: Some(lines),
+                cursor: cursor_quad,
+                selections,
+                content_height,
+                scroll_y,
+                line_height,
+            }
+        } else {
+            let line = window
+                .text_system()
+                .shape_line(display_text, font_size, &runs, None);
+
+            let cursor_pos = line.x_for_index(cursor);
+            let (selections, cursor) = if selected_range.is_empty() {
+                (
+                    Vec::new(),
+                    Some(fill(
+                        Bounds::new(
+                            point(bounds.left() + cursor_pos, bounds.top()),
+                            size(px(2.), bounds.bottom() - bounds.top()),
+                        ),
+                        input.style.cursor,
+                    )),
+                )
+            } else {
+                (
+                    vec![fill(
+                        Bounds::from_corners(
+                            point(
+                                bounds.left() + line.x_for_index(selected_range.start),
+                                bounds.top(),
+                            ),
+                            point(
+                                bounds.left() + line.x_for_index(selected_range.end),
+                                bounds.bottom(),
+                            ),
+                        ),
+                        input.style.selection,
+                    )],
+                    None,
+                )
+            };
+
+            TextInputPrepaint {
+                line: Some(line),
+                wrapped_lines: None,
+                cursor,
+                selections,
+                content_height: line_height,
+                scroll_y: Pixels::ZERO,
+                line_height,
+            }
         }
     }
 
@@ -687,23 +1060,51 @@ impl Element for TextInputElement {
             cx,
         );
 
-        if let Some(selection) = prepaint.selection.take() {
-            window.paint_quad(selection);
-        }
+        let mut stored_line = None;
+        let mut stored_wrapped_lines = None;
 
-        let line = prepaint.line.take().expect("line should exist");
-        line.paint(bounds.origin, window.line_height(), window, cx)
-            .expect("paint text input line");
+        window.with_content_mask(Some(ContentMask { bounds }), |window| {
+            window.paint_layer(bounds, |window| {
+                for selection in prepaint.selections.drain(..) {
+                    window.paint_quad(selection);
+                }
 
-        if focus_handle.is_focused(window)
-            && let Some(cursor) = prepaint.cursor.take()
-        {
-            window.paint_quad(cursor);
-        }
+                if let Some(line) = prepaint.line.take() {
+                    line.paint(bounds.origin, prepaint.line_height, window, cx)
+                        .expect("paint text input line");
+                    stored_line = Some(line);
+                } else if let Some(lines) = prepaint.wrapped_lines.take() {
+                    let mut line_origin = point(bounds.left(), bounds.top() - prepaint.scroll_y);
+                    for line in &lines {
+                        line.paint(
+                            line_origin,
+                            prepaint.line_height,
+                            TextAlign::Left,
+                            None,
+                            window,
+                            cx,
+                        )
+                        .expect("paint wrapped text input");
+                        line_origin.y += line.size(prepaint.line_height).height;
+                    }
+                    stored_wrapped_lines = Some(lines);
+                }
+
+                if focus_handle.is_focused(window)
+                    && let Some(cursor) = prepaint.cursor.take()
+                {
+                    window.paint_quad(cursor);
+                }
+            });
+        });
 
         self.input.update(cx, |input, _cx| {
-            input.last_layout = Some(line);
+            input.last_layout = stored_line;
+            input.last_wrapped_lines = stored_wrapped_lines;
             input.last_bounds = Some(bounds);
+            input.last_line_height = prepaint.line_height;
+            input.content_height = prepaint.content_height;
+            input.scroll_y = prepaint.scroll_y;
         });
     }
 }
@@ -749,7 +1150,10 @@ impl Render for TextInput {
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
-            .on_mouse_move(cx.listener(Self::on_mouse_move));
+            .on_mouse_move(cx.listener(Self::on_mouse_move))
+            .when(self.is_multiline(), |this| {
+                this.on_scroll_wheel(cx.listener(Self::on_scroll))
+            });
 
         if let Some(message) = validation_message {
             shell = shell.child(
@@ -764,12 +1168,12 @@ impl Render for TextInput {
         shell.child(
             div()
                 .cursor(CursorStyle::IBeam)
-                .h(px(CONTROL_HEIGHT))
+                .h(self.field_height())
                 .border_1()
                 .border_color(border_color)
                 .rounded_none()
                 .bg(background_color)
-                .line_height(px(22.))
+                .line_height(px(TEXT_LINE_HEIGHT))
                 .text_size(px(16.))
                 .p_3()
                 .child(TextInputElement { input: cx.entity() }),
@@ -822,7 +1226,8 @@ impl BlockCipherApp {
                 label: "IV",
             },
         );
-        let encrypt_plaintext = TextInput::new(window, cx, "Plaintext", TextInputValidator::None);
+        let encrypt_plaintext =
+            TextInput::new_multiline(window, cx, "Plaintext", TextInputValidator::None);
         let decrypt_key = TextInput::new(
             window,
             cx,
@@ -1028,7 +1433,7 @@ impl BlockCipherApp {
     fn import_plaintext(&mut self, _: &ClickEvent, _window: &mut Window, cx: &mut Context<Self>) {
         if let Ok(Some(content)) = import_text_with_dialog() {
             self.encrypt_plaintext
-                .update(cx, |input, cx| input.set_value(content, cx));
+                .update(cx, |input, cx| input.set_value_from_top(content, cx));
         }
         cx.notify();
     }
