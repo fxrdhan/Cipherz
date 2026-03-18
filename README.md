@@ -1,208 +1,131 @@
-# Tugas Block Cipher C dan Rust
+# Cipherz
 
-Repo ini berisi implementasi block cipher edukatif yang dibuat tanpa library kriptografi siap pakai. Cipher yang dipakai adalah block cipher sederhana berbasis jaringan Feistel dengan:
+Custom block cipher toolkit with two implementations: `C` for a clean low-level baseline, and `Rust` for the main CLI and desktop GUI. Both run the same cipher design, and in the current benchmark set Rust is also the faster implementation.
 
-- ukuran blok 64 bit (8 byte)
-- ukuran kunci 128 bit (16 byte)
-- 8 ronde
-- fungsi dasar utama XOR dan substitusi S-Box
-- fungsi tambahan rotasi dan permutasi bit pada round function
+## Core
 
-Mode operasi yang saat ini diimplementasikan:
+- `64-bit` block size
+- `128-bit` key size
+- `8-round` Feistel network
+- round function with `XOR`, nibble `S-Box`, rotation, and bit permutation
+- modes: `CBC`, `CFB`, `OFB`
 
-- CBC
-- CFB
-- OFB
+## Included
 
-Implementasi ini tidak menyalin DES atau AES penuh, tetapi mengikuti konsep block cipher, mode operasi, Feistel network, XOR, dan substitusi yang dibahas di materi kuliah.
+- CLI in `C`
+- CLI and GUI in `Rust`
+- GUI import for `.txt` and `.md`
+- GUI export to `.txt`
+- benchmark pipeline with `CSV` and dashboard `PNG`
+- Rust tests that lock output parity against the C implementation
 
-## Isi repo
+## Why Two Implementations?
 
-Repo ini memuat dua implementasi yang setara secara inti algoritma:
+- `C` keeps the cipher easy to inspect at the lowest level.
+- `Rust` is the primary app layer: safer memory model, cleaner ergonomics, and GUI support.
+- Keeping both makes regression checks and performance comparisons straightforward.
 
-- implementasi C CLI di `c/src/main.c`
-- implementasi Rust CLI dan GUI di `src/lib.rs`, `src/main.rs`, dan `src/gpui_app.rs`
-- tooling benchmark di `scripts/benchmark_metrics.py`
-- artefak hasil benchmark di `artifacts/benchmark/`
+## Install
 
-Input yang didukung saat ini adalah teks langsung:
+Standard install:
 
-- argumen command line pada implementasi C dan Rust
-- field teks pada GUI Rust
-
-Input file `.txt` atau file biner belum diimplementasikan pada versi repo ini.
-
-## Install Tanpa Git
-
-Installer sekarang bisa:
-
-- download source dari GitHub tanpa `git clone`
-- download executable prebuilt dari GitHub Releases jika tersedia
-- fallback ke source build kalau release asset belum ada
-- build Rust project otomatis dalam mode `release` saat fallback dipakai
-- opsional build CLI C
-- opsional langsung menjalankan GUI Rust
-
-Untuk Linux atau macOS:
+Linux or macOS:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/fxrdhan/Cipherz/main/install.sh | sh
 ```
 
-Untuk langsung build lalu menjalankan GUI:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/fxrdhan/Cipherz/main/install.sh | sh -s -- --run-ui
-```
-
-Untuk PowerShell:
+Windows PowerShell:
 
 ```powershell
 Invoke-WebRequest https://raw.githubusercontent.com/fxrdhan/Cipherz/main/install.ps1 -OutFile install.ps1
 ./install.ps1
 ```
 
-Untuk langsung build lalu menjalankan GUI di PowerShell:
+Install and launch the GUI in one step:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fxrdhan/Cipherz/main/install.sh | sh -s -- --run-ui
+```
 
 ```powershell
 ./install.ps1 -RunUI
 ```
 
-Opsi yang didukung:
+Default install does not auto-launch the app. Use `--run-ui` or `-RunUI` when you want the installer to open the GUI immediately after setup.
 
-- `install.sh`: `--branch`, `--dir`, `--force`, `--source-only`, `--build-c`, `--run-ui`
-- `install.ps1`: `-Branch`, `-InstallDir`, `-Force`, `-SourceOnly`, `-BuildC`, `-RunUI`
+## Build From Source
 
-Catatan:
-
-- installer akan mencoba memasang Rust toolchain via `rustup` jika `cargo` belum ada
-- jika latest GitHub Release sudah punya asset yang cocok dengan OS atau arsitektur user, installer akan langsung mengunduh binary siap jalan seperti `cipherz_gui`
-- dependency GUI tingkat OS tetap harus tersedia; kalau kurang, installer akan berhenti dan menunjuk ke docs resmi Zed atau GPUI untuk OS terkait
-- `--run-ui` butuh sesi grafis aktif, jadi tidak akan jalan di environment headless
-
-## Kaitan dengan PPT
-
-- konsep block cipher: slide 4
-- mode operasi block cipher: slide 7-12
-- jaringan Feistel: slide 15-17
-- fungsi substitusi dan XOR ala DES: slide 25-30
-
-## Build implementasi C
+Build the C binary:
 
 ```bash
 make
 ```
 
-Binary yang dihasilkan:
+Run C:
 
 ```bash
-./block_cipher
+./block_cipher enc cbc "KAMSIS-KEY-2026!" "IV2026!!" "halo dunia"
+./block_cipher dec cbc "KAMSIS-KEY-2026!" "IV2026!!" "<ciphertext_hex>"
 ```
 
-## Build implementasi Rust
+Build Rust:
 
 ```bash
 cargo build
 ```
 
-Menjalankan CLI Rust:
+Run Rust CLI:
 
 ```bash
 cargo run -- enc cbc "KAMSIS-KEY-2026!" "IV2026!!" "halo dunia"
+cargo run -- dec cbc "KAMSIS-KEY-2026!" "IV2026!!" "<ciphertext_hex>"
 ```
 
-Menjalankan GUI Rust:
+Run Rust GUI:
 
 ```bash
 cargo run -- ui
 ```
 
-## Menjalankan manual
-
-Enkripsi:
-
-```bash
-./block_cipher enc <mode> <key16> <iv8> <plaintext>
-```
-
-Dekripsi:
-
-```bash
-./block_cipher dec <mode> <key16> <iv8> <ciphertext_hex>
-```
-
-Contoh:
-
-```bash
-./block_cipher enc cbc "KAMSIS-KEY-2026!" "IV2026!!" "halo dunia"
-./block_cipher dec cbc "KAMSIS-KEY-2026!" "IV2026!!" "<hex hasil enkripsi>"
-```
-
-Mode yang valid:
+Valid modes:
 
 - `cbc`
 - `cfb`
 - `ofb`
 
-Catatan:
-
-- key diambil dari 16 karakter pertama
-- IV diambil dari 8 karakter pertama
-- CBC memakai padding PKCS#7
-- CFB dan OFB diproses secara stream berbasis blok sehingga tidak memerlukan padding
-
 ## Benchmark
 
-Benchmark bawaan pada CLI C:
+Run the built-in benchmark:
 
 ```bash
 ./block_cipher bench
-```
-
-Benchmark bawaan pada CLI Rust:
-
-```bash
 cargo run -- bench
 ```
 
-Untuk menghasilkan metrik komprehensif dan dashboard benchmark C vs Rust:
+Generate the full comparison dashboard:
 
 ```bash
 python3 scripts/benchmark_metrics.py
 ```
 
-Script benchmark saat ini hanya mengukur mode yang benar-benar tersedia di kode:
+Across the committed benchmark set, Rust leads in every tested mode and operation. Average throughput is about `1.44x` higher overall, and the `4 MiB` runs below show a `1.17x` to `1.47x` advantage depending on mode.
 
-- `CBC`
-- `CFB`
-- `OFB`
+![Cipherz benchmark dashboard](artifacts/benchmark/benchmark_dashboard.png)
 
-Output yang dihasilkan:
+### 4 MiB Snapshot
 
-- `artifacts/benchmark/benchmark_results.csv`
-- `artifacts/benchmark/benchmark_summary.csv`
-- `artifacts/benchmark/benchmark_dashboard.png`
+| Mode | Operation | C (MiB/s) | Rust (MiB/s) | Rust/C | C (ms) | Rust (ms) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| CBC | Encrypt | 116.94 | 167.61 | 1.43x | 34.204 | 23.866 |
+| CBC | Decrypt | 140.99 | 207.02 | 1.47x | 28.371 | 19.322 |
+| CFB | Encrypt | 119.13 | 139.71 | 1.17x | 33.578 | 28.631 |
+| CFB | Decrypt | 144.19 | 195.05 | 1.35x | 27.741 | 20.508 |
+| OFB | Encrypt | 126.31 | 166.21 | 1.32x | 31.668 | 24.066 |
+| OFB | Decrypt | 137.39 | 181.59 | 1.32x | 29.114 | 22.028 |
 
-## Pengujian
-
-Menjalankan test Rust:
+## Test
 
 ```bash
 cargo test
 ```
-
-Test yang ada saat ini memverifikasi:
-
-- kesesuaian ciphertext hasil implementasi Rust terhadap implementasi C
-- validasi kegagalan padding untuk mode CBC
-
-## Struktur program
-
-- `encrypt_block()` dan `decrypt_block()` mengerjakan enkripsi dan dekripsi satu blok dengan Feistel
-- `round_function()` memakai XOR, S-Box, dan rotasi atau permutasi bit
-- `encrypt_message()` dan `decrypt_message()` menangani mode operasi
-- `scripts/benchmark_metrics.py` membandingkan throughput dan latensi implementasi C dan Rust
-
-## Catatan akademik
-
-Cipher ini bersifat edukatif untuk memenuhi tugas kuliah. Implementasi ini bukan pengganti algoritma standar seperti AES untuk sistem produksi.
