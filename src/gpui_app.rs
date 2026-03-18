@@ -59,6 +59,8 @@ const MODE_OPTIONS: [ModeOption; 3] = [
     },
 ];
 
+const CONTROL_HEIGHT: f32 = 48.0;
+
 #[derive(Clone)]
 struct TextInputStyle {
     background: Hsla,
@@ -137,7 +139,8 @@ impl TextInput {
     }
 
     fn set_value(&mut self, value: impl Into<String>, cx: &mut Context<Self>) {
-        self.content = value.into();
+        let value = value.into();
+        self.content = sanitize_single_line_text(&value);
         self.reveal_validation_on_empty = !self.content.is_empty();
         let end = self.content.len();
         self.selected_range = end..end;
@@ -272,7 +275,7 @@ impl TextInput {
 
     fn paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-            self.replace_text_in_range(None, &text.replace('\n', " "), window, cx);
+            self.replace_text_in_range(None, &text, window, cx);
         }
     }
 
@@ -442,11 +445,14 @@ impl EntityInputHandler for TextInput {
             .map(|range_utf16| self.range_from_utf16(range_utf16))
             .or(self.marked_range.clone())
             .unwrap_or(self.selected_range.clone());
+        let sanitized_new_text = sanitize_single_line_text(new_text);
 
-        self.content =
-            self.content[0..range.start].to_owned() + new_text + &self.content[range.end..];
+        self.content = self.content[0..range.start].to_owned()
+            + &sanitized_new_text
+            + &self.content[range.end..];
         self.reveal_validation_on_empty = !self.content.is_empty();
-        self.selected_range = range.start + new_text.len()..range.start + new_text.len();
+        self.selected_range =
+            range.start + sanitized_new_text.len()..range.start + sanitized_new_text.len();
         self.marked_range.take();
         cx.notify();
     }
@@ -464,12 +470,14 @@ impl EntityInputHandler for TextInput {
             .map(|range_utf16| self.range_from_utf16(range_utf16))
             .or(self.marked_range.clone())
             .unwrap_or(self.selected_range.clone());
+        let sanitized_new_text = sanitize_single_line_text(new_text);
 
-        self.content =
-            self.content[0..range.start].to_owned() + new_text + &self.content[range.end..];
+        self.content = self.content[0..range.start].to_owned()
+            + &sanitized_new_text
+            + &self.content[range.end..];
         self.reveal_validation_on_empty = !self.content.is_empty();
-        if !new_text.is_empty() {
-            self.marked_range = Some(range.start..range.start + new_text.len());
+        if !sanitized_new_text.is_empty() {
+            self.marked_range = Some(range.start..range.start + sanitized_new_text.len());
         } else {
             self.marked_range = None;
         }
@@ -477,7 +485,9 @@ impl EntityInputHandler for TextInput {
             .as_ref()
             .map(|range_utf16| self.range_from_utf16(range_utf16))
             .map(|new_range| new_range.start + range.start..new_range.end + range.end)
-            .unwrap_or_else(|| range.start + new_text.len()..range.start + new_text.len());
+            .unwrap_or_else(|| {
+                range.start + sanitized_new_text.len()..range.start + sanitized_new_text.len()
+            });
 
         cx.notify();
     }
@@ -753,6 +763,7 @@ impl Render for TextInput {
         shell.child(
             div()
                 .cursor(CursorStyle::IBeam)
+                .h(px(CONTROL_HEIGHT))
                 .border_1()
                 .border_color(border_color)
                 .rounded_none()
@@ -1005,9 +1016,8 @@ impl BlockCipherApp {
 
     fn import_plaintext(&mut self, _: &ClickEvent, _window: &mut Window, cx: &mut Context<Self>) {
         if let Ok(Some(content)) = import_text_with_dialog() {
-            self.encrypt_plaintext.update(cx, |input, cx| {
-                input.set_value(content.replace("\r\n", "\n"), cx)
-            });
+            self.encrypt_plaintext
+                .update(cx, |input, cx| input.set_value(content, cx));
         }
         cx.notify();
     }
@@ -1035,8 +1045,11 @@ impl BlockCipherApp {
         div()
             .id(id)
             .cursor_pointer()
+            .flex()
+            .items_center()
+            .justify_center()
+            .h(px(CONTROL_HEIGHT))
             .px_4()
-            .py_2()
             .border_1()
             .border_color(border)
             .bg(bg)
@@ -1074,8 +1087,7 @@ impl BlockCipherApp {
             .justify_center()
             .items_center()
             .w(px(120.))
-            .h(px(44.))
-            .p_3()
+            .h(px(CONTROL_HEIGHT))
             .border_1()
             .border_color(border)
             .bg(bg)
@@ -1470,8 +1482,11 @@ fn action_button(
 ) -> Div {
     div()
         .cursor_pointer()
+        .flex()
+        .items_center()
+        .justify_center()
+        .h(px(CONTROL_HEIGHT))
         .px_4()
-        .py_3()
         .border_1()
         .border_color(border_color)
         .bg(color)
@@ -1490,6 +1505,10 @@ fn validate_key_iv(key_text: &str, iv_text: &str) -> Option<String> {
     }
 
     None
+}
+
+fn sanitize_single_line_text(text: &str) -> String {
+    text.replace("\r\n", "\n").replace(['\r', '\n'], " ")
 }
 
 fn save_output_with_dialog(prefix: &str, content: &str) -> std::io::Result<()> {
