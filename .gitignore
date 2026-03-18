@@ -5,3 +5,4 @@ __pycache__/
 
 block_cipher
 target/
+artifacts/benchmark/__pycache__/

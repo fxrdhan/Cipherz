@@ -20,8 +20,10 @@ Implementasi ini tidak menyalin DES atau AES penuh, tetapi mengikuti konsep bloc
 
 Repo ini memuat dua implementasi yang setara secara inti algoritma:
 
-- implementasi C CLI di `main.c`
+- implementasi C CLI di `c/src/main.c`
 - implementasi Rust CLI dan GUI di `src/lib.rs`, `src/main.rs`, dan `src/gpui_app.rs`
+- tooling benchmark di `scripts/benchmark_metrics.py`
+- artefak hasil benchmark di `artifacts/benchmark/`
 
 Input yang didukung saat ini adalah teks langsung:
 
@@ -129,9 +131,9 @@ Script benchmark saat ini hanya mengukur mode yang benar-benar tersedia di kode:
 
 Output yang dihasilkan:
 
-- `benchmark_results.csv`
-- `benchmark_summary.csv`
-- `benchmark_dashboard.png`
+- `artifacts/benchmark/benchmark_results.csv`
+- `artifacts/benchmark/benchmark_summary.csv`
+- `artifacts/benchmark/benchmark_dashboard.png`
 
 ## Pengujian
 
@@ -151,7 +153,7 @@ Test yang ada saat ini memverifikasi:
 - `encrypt_block()` dan `decrypt_block()` mengerjakan enkripsi dan dekripsi satu blok dengan Feistel
 - `round_function()` memakai XOR, S-Box, dan rotasi atau permutasi bit
 - `encrypt_message()` dan `decrypt_message()` menangani mode operasi
-- `benchmark_metrics.py` membandingkan throughput dan latensi implementasi C dan Rust
+- `scripts/benchmark_metrics.py` membandingkan throughput dan latensi implementasi C dan Rust
 
 ## Catatan akademik
 
