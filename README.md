@@ -37,7 +37,9 @@ Input file `.txt` atau file biner belum diimplementasikan pada versi repo ini.
 Installer sekarang bisa:
 
 - download source dari GitHub tanpa `git clone`
-- build Rust project otomatis dalam mode `release`
+- download executable prebuilt dari GitHub Releases jika tersedia
+- fallback ke source build kalau release asset belum ada
+- build Rust project otomatis dalam mode `release` saat fallback dipakai
 - opsional build CLI C
 - opsional langsung menjalankan GUI Rust
 
@@ -74,6 +76,7 @@ Opsi yang didukung:
 Catatan:
 
 - installer akan mencoba memasang Rust toolchain via `rustup` jika `cargo` belum ada
+- jika latest GitHub Release sudah punya asset yang cocok dengan OS atau arsitektur user, installer akan langsung mengunduh binary siap jalan seperti `cipherz_gui`
 - dependency GUI tingkat OS tetap harus tersedia; kalau kurang, installer akan berhenti dan menunjuk ke docs resmi Zed atau GPUI untuk OS terkait
 - `--run-ui` butuh sesi grafis aktif, jadi tidak akan jalan di environment headless
 

@@ -14,6 +14,32 @@ $RepoName = "Cipherz"
 $DownloadUrl = "https://github.com/$RepoOwner/$RepoName/archive/refs/heads/$Branch.zip"
 $PathSeparator = [System.IO.Path]::PathSeparator
 
+function Get-NormalizedArchitecture {
+    switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()) {
+        "x64" { return "x86_64" }
+        "arm64" { return "aarch64" }
+        default { return [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant() }
+    }
+}
+
+function Get-PrebuiltAssetName {
+    $arch = Get-NormalizedArchitecture
+
+    if ($IsWindows) {
+        return "Cipherz-windows-$arch.zip"
+    }
+
+    if ($IsMacOS) {
+        return "Cipherz-macos-$arch.tar.gz"
+    }
+
+    if ($IsLinux) {
+        return "Cipherz-linux-$arch.tar.gz"
+    }
+
+    return $null
+}
+
 function Get-DocsUrl {
     if ($IsWindows) {
         return "https://zed.dev/docs/development/windows"
@@ -140,11 +166,53 @@ function Run-GuiApp {
     Write-Host "Launching GUI app..."
     Push-Location $resolvedInstallDir
     try {
-        & cargo run --release -- ui
+        $guiBinary = if ($IsWindows) { "cipherz_gui.exe" } else { "./cipherz_gui" }
+        if (Test-Path $guiBinary) {
+            & $guiBinary
+        }
+        else {
+            & cargo run --release -- ui
+        }
     }
     finally {
         Pop-Location
     }
+}
+
+function Try-InstallPrebuiltRelease {
+    $assetName = Get-PrebuiltAssetName
+    if (-not $assetName) {
+        return $false
+    }
+
+    $assetUrl = "https://github.com/$RepoOwner/$RepoName/releases/latest/download/$assetName"
+    $assetPath = Join-Path $tempRoot $assetName
+    $prebuiltExtract = Join-Path $tempRoot "prebuilt"
+    New-Item -ItemType Directory -Force -Path $prebuiltExtract | Out-Null
+
+    try {
+        Write-Host "Trying prebuilt release asset $assetName..."
+        Invoke-WebRequest -Uri $assetUrl -OutFile $assetPath
+    }
+    catch {
+        Write-Host "Prebuilt asset not available for this OS/arch. Falling back to source build."
+        return $false
+    }
+
+    if ($assetName.EndsWith(".zip")) {
+        Expand-Archive -Path $assetPath -DestinationPath $prebuiltExtract -Force
+    }
+    else {
+        & tar -xzf $assetPath -C $prebuiltExtract
+    }
+
+    $sourceDir = Get-ChildItem -Path $prebuiltExtract -Directory | Select-Object -First 1
+    if (-not $sourceDir) {
+        throw "Prebuilt archive did not contain an application directory."
+    }
+
+    Move-Item -Path $sourceDir.FullName -Destination $resolvedInstallDir
+    return $true
 }
 
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("cipherz-install-" + [Guid]::NewGuid().ToString("N"))
@@ -179,26 +247,34 @@ try {
         New-Item -ItemType Directory -Force -Path $parentDir | Out-Null
     }
 
-    Write-Host "Downloading $RepoName ($Branch)..."
-    Invoke-WebRequest -Uri $DownloadUrl -OutFile $archivePath
-    Expand-Archive -Path $archivePath -DestinationPath $extractPath -Force
-
-    $sourceDir = Get-ChildItem -Path $extractPath -Directory | Select-Object -First 1
-    if (-not $sourceDir) {
-        throw "Downloaded archive did not contain a project directory."
+    $usedPrebuilt = $false
+    if ($Branch -eq "main" -and -not $BuildC -and -not $SourceOnly) {
+        $usedPrebuilt = Try-InstallPrebuiltRelease
     }
 
-    Move-Item -Path $sourceDir.FullName -Destination $resolvedInstallDir
+    if (-not $usedPrebuilt) {
+        Write-Host "Downloading $RepoName ($Branch)..."
+        Invoke-WebRequest -Uri $DownloadUrl -OutFile $archivePath
+        Expand-Archive -Path $archivePath -DestinationPath $extractPath -Force
+
+        $sourceDir = Get-ChildItem -Path $extractPath -Directory | Select-Object -First 1
+        if (-not $sourceDir) {
+            throw "Downloaded archive did not contain a project directory."
+        }
+
+        Move-Item -Path $sourceDir.FullName -Destination $resolvedInstallDir
+    }
+
     Write-Host "Installed to $resolvedInstallDir"
 
-    if (-not $SourceOnly) {
+    if (-not $SourceOnly -and -not $usedPrebuilt) {
         Add-CargoToPath
         Ensure-RustToolchain
         Ensure-GuiPrereqs
         Build-RustProject
     }
 
-    if ($BuildC) {
+    if ($BuildC -and -not $usedPrebuilt) {
         Build-CProject
     }
 
@@ -209,7 +285,17 @@ try {
 
     Write-Host "Next steps:"
     Write-Host "  Set-Location '$resolvedInstallDir'"
-    Write-Host "  cargo run -- ui"
+    if ($usedPrebuilt) {
+        if ($IsWindows) {
+            Write-Host "  .\cipherz_gui.exe"
+        }
+        else {
+            Write-Host "  ./cipherz_gui"
+        }
+    }
+    else {
+        Write-Host "  cargo run -- ui"
+    }
 }
 finally {
     if (Test-Path $tempRoot) {

@@ -49,6 +49,62 @@ docs_url_for_os() {
     esac
 }
 
+normalize_arch() {
+    case "$1" in
+        x86_64|amd64)
+            printf '%s\n' 'x86_64'
+            ;;
+        aarch64|arm64)
+            printf '%s\n' 'aarch64'
+            ;;
+        *)
+            printf '%s\n' "$1"
+            ;;
+    esac
+}
+
+prebuilt_asset_name() {
+    os_name="$(uname -s)"
+    arch_name="$(normalize_arch "$(uname -m)")"
+
+    case "$os_name" in
+        Linux)
+            printf 'Cipherz-linux-%s.tar.gz\n' "$arch_name"
+            ;;
+        Darwin)
+            printf 'Cipherz-macos-%s.tar.gz\n' "$arch_name"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+install_prebuilt_release() {
+    asset_name="$(prebuilt_asset_name)" || return 1
+    asset_url="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/latest/download/${asset_name}"
+    asset_archive="$TMP_ROOT/$asset_name"
+    prebuilt_extract="$TMP_ROOT/prebuilt"
+
+    mkdir -p "$prebuilt_extract"
+
+    printf 'Trying prebuilt release asset %s...\n' "$asset_name"
+    if ! curl -fsSL "$asset_url" -o "$asset_archive"; then
+        printf 'Prebuilt asset not available for this OS/arch. Falling back to source build.\n'
+        return 1
+    fi
+
+    tar -xzf "$asset_archive" -C "$prebuilt_extract"
+    set -- "$prebuilt_extract"/*
+    if [ "$#" -eq 0 ] || [ ! -d "$1" ]; then
+        printf 'Error: prebuilt archive did not contain an application directory.\n' >&2
+        exit 1
+    fi
+
+    mv "$1" "$INSTALL_DIR"
+    return 0
+}
+
 ensure_rust_toolchain() {
     if command -v cargo >/dev/null 2>&1 && command -v rustc >/dev/null 2>&1; then
         return
@@ -129,10 +185,17 @@ run_gui_app() {
     esac
 
     printf 'Launching GUI app...\n'
-    (
-        cd "$INSTALL_DIR"
-        cargo run --release -- ui
-    )
+    if [ -x "$INSTALL_DIR/cipherz_gui" ]; then
+        (
+            cd "$INSTALL_DIR"
+            ./cipherz_gui
+        )
+    else
+        (
+            cd "$INSTALL_DIR"
+            cargo run --release -- ui
+        )
+    fi
 }
 
 while [ "$#" -gt 0 ]; do
@@ -215,30 +278,39 @@ fi
 
 DOWNLOAD_URL="https://codeload.github.com/${REPO_OWNER}/${REPO_NAME}/tar.gz/refs/heads/${BRANCH}"
 
-printf 'Downloading %s (%s)...\n' "$REPO_NAME" "$BRANCH"
-curl -fsSL "$DOWNLOAD_URL" -o "$ARCHIVE_PATH"
-tar -xzf "$ARCHIVE_PATH" -C "$EXTRACT_DIR"
-
-set -- "$EXTRACT_DIR"/*
-
-if [ "$#" -eq 0 ] || [ ! -d "$1" ]; then
-    printf 'Error: downloaded archive did not contain a project directory.\n' >&2
-    exit 1
+USED_PREBUILT=0
+if [ "$BRANCH" = "main" ] && [ "$BUILD_C" -eq 0 ] && [ "$BUILD_RUST" -eq 1 ]; then
+    if install_prebuilt_release; then
+        USED_PREBUILT=1
+    fi
 fi
 
-mv "$1" "$INSTALL_DIR"
+if [ "$USED_PREBUILT" -eq 0 ]; then
+    printf 'Downloading %s (%s)...\n' "$REPO_NAME" "$BRANCH"
+    curl -fsSL "$DOWNLOAD_URL" -o "$ARCHIVE_PATH"
+    tar -xzf "$ARCHIVE_PATH" -C "$EXTRACT_DIR"
+
+    set -- "$EXTRACT_DIR"/*
+
+    if [ "$#" -eq 0 ] || [ ! -d "$1" ]; then
+        printf 'Error: downloaded archive did not contain a project directory.\n' >&2
+        exit 1
+    fi
+
+    mv "$1" "$INSTALL_DIR"
+fi
 
 TARGET_ABS="$(cd "$(dirname "$INSTALL_DIR")" && pwd)/$(basename "$INSTALL_DIR")"
 
 printf 'Installed to %s\n' "$TARGET_ABS"
 
-if [ "$BUILD_RUST" -eq 1 ] || [ "$RUN_UI" -eq 1 ]; then
+if [ "$USED_PREBUILT" -eq 0 ] && { [ "$BUILD_RUST" -eq 1 ] || [ "$RUN_UI" -eq 1 ]; }; then
     ensure_rust_toolchain
     ensure_gui_prereqs
     build_rust_project
 fi
 
-if [ "$BUILD_C" -eq 1 ]; then
+if [ "$USED_PREBUILT" -eq 0 ] && [ "$BUILD_C" -eq 1 ]; then
     build_c_project
 fi
 
@@ -249,4 +321,8 @@ fi
 
 printf 'Next steps:\n'
 printf '  cd %s\n' "$INSTALL_DIR"
-printf '  cargo run -- ui\n'
+if [ "$USED_PREBUILT" -eq 1 ]; then
+    printf '  ./cipherz_gui\n'
+else
+    printf '  cargo run -- ui\n'
+fi

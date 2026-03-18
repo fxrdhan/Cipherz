@@ -1,0 +1,93 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-release-assets:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux
+            arch: x86_64
+            artifact_ext: tar.gz
+          - runner: windows-latest
+            platform: windows
+            arch: x86_64
+            artifact_ext: zip
+          - runner: macos-13
+            platform: macos
+            arch: x86_64
+            artifact_ext: tar.gz
+          - runner: macos-14
+            platform: macos
+            arch: aarch64
+            artifact_ext: tar.gz
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            pkg-config \
+            libasound2-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libgl1-mesa-dev \
+            libvulkan-dev \
+            libwayland-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libxinerama-dev \
+            libxkbcommon-dev \
+            libxrandr-dev \
+            make
+
+      - name: Build release binaries
+        run: cargo build --release --bin cipherz_gui --bin cipherz_cli
+
+      - name: Package release archive
+        shell: bash
+        run: |
+          python3 scripts/package_release.py \
+            --platform "${{ matrix.platform }}" \
+            --arch "${{ matrix.arch }}" \
+            --release-dir target/release \
+            --output-dir dist
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cipherz-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/Cipherz-${{ matrix.platform }}-${{ matrix.arch }}.${{ matrix.artifact_ext }}
+
+      - name: Publish release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Cipherz-${{ matrix.platform }}-${{ matrix.arch }}.${{ matrix.artifact_ext }}
