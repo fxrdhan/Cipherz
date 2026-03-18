@@ -109,6 +109,7 @@ struct TextInput {
     is_selecting: bool,
     style: TextInputStyle,
     validator: TextInputValidator,
+    reveal_validation_on_empty: bool,
 }
 
 impl TextInput {
@@ -131,11 +132,13 @@ impl TextInput {
             is_selecting: false,
             style: TextInputStyle::light(),
             validator,
+            reveal_validation_on_empty: false,
         })
     }
 
     fn set_value(&mut self, value: impl Into<String>, cx: &mut Context<Self>) {
         self.content = value.into();
+        self.reveal_validation_on_empty = !self.content.is_empty();
         let end = self.content.len();
         self.selected_range = end..end;
         self.selection_reversed = false;
@@ -151,11 +154,18 @@ impl TextInput {
         self.set_value(String::new(), cx);
     }
 
+    fn reveal_validation(&mut self, cx: &mut Context<Self>) {
+        self.reveal_validation_on_empty = true;
+        cx.notify();
+    }
+
     fn validation_message(&self) -> Option<String> {
         match self.validator {
             TextInputValidator::None => None,
             TextInputValidator::ExactLength { len, label } => {
-                if self.content.len() == len {
+                if self.content.is_empty() && !self.reveal_validation_on_empty {
+                    None
+                } else if self.content.len() == len {
                     None
                 } else {
                     Some(format!("{label} must be exactly {len} characters."))
@@ -435,6 +445,7 @@ impl EntityInputHandler for TextInput {
 
         self.content =
             self.content[0..range.start].to_owned() + new_text + &self.content[range.end..];
+        self.reveal_validation_on_empty = !self.content.is_empty();
         self.selected_range = range.start + new_text.len()..range.start + new_text.len();
         self.marked_range.take();
         cx.notify();
@@ -456,6 +467,7 @@ impl EntityInputHandler for TextInput {
 
         self.content =
             self.content[0..range.start].to_owned() + new_text + &self.content[range.end..];
+        self.reveal_validation_on_empty = !self.content.is_empty();
         if !new_text.is_empty() {
             self.marked_range = Some(range.start..range.start + new_text.len());
         } else {
@@ -704,11 +716,10 @@ impl Render for TextInput {
             self.style.background
         };
 
-        div()
+        let mut shell = div()
             .id("text-input-shell")
             .flex()
             .flex_col()
-            .gap_1()
             .key_context("BlockCipherTextInput")
             .track_focus(&self.focus_handle(cx))
             .on_action(cx.listener(Self::backspace))
@@ -727,26 +738,30 @@ impl Render for TextInput {
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
-            .on_mouse_move(cx.listener(Self::on_mouse_move))
-            .child(
+            .on_mouse_move(cx.listener(Self::on_mouse_move));
+
+        if let Some(message) = validation_message {
+            shell = shell.child(
                 div()
+                    .pb_1()
                     .text_sm()
                     .text_color(rgb(0xB46D72))
-                    .min_h(px(18.))
-                    .child(validation_message.unwrap_or_default()),
-            )
-            .child(
-                div()
-                    .cursor(CursorStyle::IBeam)
-                    .border_1()
-                    .border_color(border_color)
-                    .rounded_none()
-                    .bg(background_color)
-                    .line_height(px(22.))
-                    .text_size(px(16.))
-                    .p_3()
-                    .child(TextInputElement { input: cx.entity() }),
-            )
+                    .child(message),
+            );
+        }
+
+        shell.child(
+            div()
+                .cursor(CursorStyle::IBeam)
+                .border_1()
+                .border_color(border_color)
+                .rounded_none()
+                .bg(background_color)
+                .line_height(px(22.))
+                .text_size(px(16.))
+                .p_3()
+                .child(TextInputElement { input: cx.entity() }),
+        )
     }
 }
 
@@ -857,6 +872,10 @@ impl BlockCipherApp {
         let plaintext = self.encrypt_plaintext.read(cx).value();
 
         if validate_key_iv(&key_text, &iv_text).is_some() {
+            self.encrypt_key
+                .update(cx, |input, cx| input.reveal_validation(cx));
+            self.encrypt_iv
+                .update(cx, |input, cx| input.reveal_validation(cx));
             self.encrypt_result.clear();
             self.encrypt_copy_done_until = None;
             cx.notify();
@@ -885,6 +904,10 @@ impl BlockCipherApp {
         let ciphertext_text = self.decrypt_ciphertext.read(cx).value();
 
         if validate_key_iv(&key_text, &iv_text).is_some() {
+            self.decrypt_key
+                .update(cx, |input, cx| input.reveal_validation(cx));
+            self.decrypt_iv
+                .update(cx, |input, cx| input.reveal_validation(cx));
             self.decrypt_result.clear();
             self.decrypt_copy_done_until = None;
             cx.notify();
