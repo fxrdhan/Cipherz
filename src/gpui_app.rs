@@ -983,7 +983,7 @@ impl BlockCipherApp {
         }
     }
 
-    fn save_encrypt_result(
+    fn export_encrypt_result(
         &mut self,
         _: &ClickEvent,
         _window: &mut Window,
@@ -993,13 +993,22 @@ impl BlockCipherApp {
         cx.notify();
     }
 
-    fn save_decrypt_result(
+    fn export_decrypt_result(
         &mut self,
         _: &ClickEvent,
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let _ = save_output_with_dialog("plaintext", &self.decrypt_result);
+        cx.notify();
+    }
+
+    fn import_plaintext(&mut self, _: &ClickEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        if let Ok(Some(content)) = import_text_with_dialog() {
+            self.encrypt_plaintext.update(cx, |input, cx| {
+                input.set_value(content.replace("\r\n", "\n"), cx)
+            });
+        }
         cx.notify();
     }
 
@@ -1080,6 +1089,42 @@ impl BlockCipherApp {
     }
 
     fn render_result_card(&self, title: &str, body: &str) -> impl IntoElement {
+        let should_scroll = body.lines().count() > 4 || body.len() > 160;
+        let scroll_id = if title == "Ciphertext" {
+            "ciphertext-output-scroll"
+        } else {
+            "plaintext-output-scroll"
+        };
+        let body_element = if should_scroll {
+            div()
+                .id(scroll_id)
+                .pt_1()
+                .w_full()
+                .h(px(160.))
+                .overflow_y_scroll()
+                .pr_2()
+                .text_color(rgb(0x4E4A59))
+                .text_sm()
+                .child(if body.is_empty() {
+                    "-".to_string()
+                } else {
+                    body.to_string()
+                })
+                .into_any_element()
+        } else {
+            div()
+                .pt_1()
+                .text_color(rgb(0x4E4A59))
+                .text_sm()
+                .min_h(px(28.))
+                .child(if body.is_empty() {
+                    "-".to_string()
+                } else {
+                    body.to_string()
+                })
+                .into_any_element()
+        };
+
         div()
             .flex()
             .flex_col()
@@ -1092,18 +1137,7 @@ impl BlockCipherApp {
                     .text_color(rgb(0xAF6A6F))
                     .child(title.to_string()),
             )
-            .child(
-                div()
-                    .pt_1()
-                    .text_color(rgb(0x4E4A59))
-                    .text_sm()
-                    .min_h(px(28.))
-                    .child(if body.is_empty() {
-                        "-".to_string()
-                    } else {
-                        body.to_string()
-                    }),
-            )
+            .child(body_element)
     }
 
     fn render_encrypt_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1157,13 +1191,13 @@ impl BlockCipherApp {
             );
             action_children.push(
                 action_button(
-                    "Save",
+                    "Export",
                     rgb(0xFFFDF9).into(),
                     rgb(0x7B7287).into(),
                     rgb(0xD1C2B7).into(),
                 )
-                .id("encrypt-save")
-                .on_click(cx.listener(Self::save_encrypt_result))
+                .id("encrypt-export")
+                .on_click(cx.listener(Self::export_encrypt_result))
                 .into_any_element(),
             );
         }
@@ -1175,7 +1209,24 @@ impl BlockCipherApp {
             .w_full()
             .child(self.encrypt_key.clone())
             .child(self.encrypt_iv.clone())
-            .child(self.encrypt_plaintext.clone())
+            .child(
+                div()
+                    .flex()
+                    .items_end()
+                    .gap_3()
+                    .w_full()
+                    .child(div().flex_1().child(self.encrypt_plaintext.clone()))
+                    .child(
+                        action_button(
+                            "Import",
+                            rgb(0xFFFDF9).into(),
+                            rgb(0x7B7287).into(),
+                            rgb(0xD1C2B7).into(),
+                        )
+                        .id("encrypt-import")
+                        .on_click(cx.listener(Self::import_plaintext)),
+                    ),
+            )
             .child(
                 div()
                     .flex()
@@ -1237,13 +1288,13 @@ impl BlockCipherApp {
             );
             action_children.push(
                 action_button(
-                    "Save",
+                    "Export",
                     rgb(0xFFFDF9).into(),
                     rgb(0x7B7287).into(),
                     rgb(0xD1C2B7).into(),
                 )
-                .id("decrypt-save")
-                .on_click(cx.listener(Self::save_decrypt_result))
+                .id("decrypt-export")
+                .on_click(cx.listener(Self::export_decrypt_result))
                 .into_any_element(),
             );
         }
@@ -1463,6 +1514,24 @@ fn save_output_with_dialog(prefix: &str, content: &str) -> std::io::Result<()> {
     }
 
     Ok(())
+}
+
+fn import_text_with_dialog() -> std::io::Result<Option<String>> {
+    let start_dir = std::env::current_dir().ok();
+
+    let mut dialog = FileDialog::new()
+        .add_filter("Text and Markdown", &["txt", "md"])
+        .add_filter("Text", &["txt"])
+        .add_filter("Markdown", &["md"]);
+    if let Some(dir) = start_dir {
+        dialog = dialog.set_directory(dir);
+    }
+
+    let Some(path) = dialog.pick_file() else {
+        return Ok(None);
+    };
+
+    Ok(Some(std::fs::read_to_string(path)?))
 }
 
 fn hex_value(c: u8) -> Option<u8> {
