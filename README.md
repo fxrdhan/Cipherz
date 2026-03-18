@@ -34,23 +34,48 @@ Input file `.txt` atau file biner belum diimplementasikan pada versi repo ini.
 
 ## Install Tanpa Git
 
-Untuk Linux atau macOS, user bisa ambil snapshot repo tanpa `git clone`:
+Installer sekarang bisa:
+
+- download source dari GitHub tanpa `git clone`
+- build Rust project otomatis dalam mode `release`
+- opsional build CLI C
+- opsional langsung menjalankan GUI Rust
+
+Untuk Linux atau macOS:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/fxrdhan/Cipherz/main/install.sh | sh
 ```
 
-Untuk PowerShell, user bisa ambil dan jalankan installer:
+Untuk langsung build lalu menjalankan GUI:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fxrdhan/Cipherz/main/install.sh | sh -s -- --run-ui
+```
+
+Untuk PowerShell:
 
 ```powershell
 Invoke-WebRequest https://raw.githubusercontent.com/fxrdhan/Cipherz/main/install.ps1 -OutFile install.ps1
 ./install.ps1
 ```
 
+Untuk langsung build lalu menjalankan GUI di PowerShell:
+
+```powershell
+./install.ps1 -RunUI
+```
+
 Opsi yang didukung:
 
-- `install.sh`: `--branch`, `--dir`, `--force`
-- `install.ps1`: `-Branch`, `-InstallDir`, `-Force`
+- `install.sh`: `--branch`, `--dir`, `--force`, `--source-only`, `--build-c`, `--run-ui`
+- `install.ps1`: `-Branch`, `-InstallDir`, `-Force`, `-SourceOnly`, `-BuildC`, `-RunUI`
+
+Catatan:
+
+- installer akan mencoba memasang Rust toolchain via `rustup` jika `cargo` belum ada
+- dependency GUI tingkat OS tetap harus tersedia; kalau kurang, installer akan berhenti dan menunjuk ke docs resmi Zed atau GPUI untuk OS terkait
+- `--run-ui` butuh sesi grafis aktif, jadi tidak akan jalan di environment headless
 
 ## Kaitan dengan PPT
 
