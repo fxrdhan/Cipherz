@@ -1,6 +1,6 @@
 # Cipherz
 
-Toolkit cipher blok kustom dengan dua implementasi: `C` sebagai dasar tingkat rendah yang bersih, dan `Rust` untuk CLI utama serta GUI desktop. Keduanya menjalankan desain cipher yang sama, dan pada kumpulan benchmark saat ini Rust juga menjadi implementasi yang lebih cepat.
+Toolkit cipher blok kustom dengan dua implementasi: `C` sebagai dasar tingkat rendah yang bersih, dan `Rust` untuk CLI utama serta GUI desktop. Keduanya menjalankan desain cipher yang sama, sedangkan benchmark dijalankan terpisah lewat skrip Python.
 
 ## Gambaran Umum
 
@@ -61,7 +61,7 @@ make
 ### Menjalankan Implementasi C
 
 ```bash
-./block_cipher enc cbc "KAMSIS-KEY-2026!" "IV2026!!" "halo dunia"
+./block_cipher enc cbc "KAMSIS-KEY-2026!" "IV2026!!" "Firdaus Arif Ramadhani"
 ./block_cipher dec cbc "KAMSIS-KEY-2026!" "IV2026!!" "<ciphertext_hex>"
 ```
 
@@ -74,14 +74,14 @@ cargo build
 ### Menjalankan CLI Rust
 
 ```bash
-cargo run -- enc cbc "KAMSIS-KEY-2026!" "IV2026!!" "halo dunia"
-cargo run -- dec cbc "KAMSIS-KEY-2026!" "IV2026!!" "<ciphertext_hex>"
+cargo run --bin cipherz_cli -- enc cbc "KAMSIS-KEY-2026!" "IV2026!!" "Firdaus Arif Ramadhani"
+cargo run --bin cipherz_cli -- dec cbc "KAMSIS-KEY-2026!" "IV2026!!" "<ciphertext_hex>"
 ```
 
 ### Menjalankan GUI Rust
 
 ```bash
-cargo run -- ui
+cargo run --bin cipherz_gui
 ```
 
 ## Mode Operasi yang Didukung
@@ -94,30 +94,12 @@ Mode yang tersedia:
 
 ## Benchmark dan Kinerja
 
-Jalankan benchmark bawaan:
-
-```bash
-./block_cipher bench
-cargo run -- bench
-```
-
-Hasilkan dashboard perbandingan lengkap:
+Hasilkan benchmark dan dashboard perbandingan lengkap lewat skrip Python:
 
 ```bash
 python3 scripts/benchmark_metrics.py
 ```
 
-Rust unggul di setiap mode dan operasi yang diuji. Throughput rata-rata secara keseluruhan sekitar `1.44x` lebih tinggi, dan pengujian `4 MiB` di bawah menunjukkan keunggulan `1.17x` hingga `1.47x` tergantung modenya.
+CLI `C` dan `Rust` tidak lagi menyediakan subcommand benchmark internal. Skrip ini akan membangun binary yang dibutuhkan, menjalankan `enc` dan `dec` untuk kedua implementasi, lalu menghasilkan artifact `CSV` dan dashboard `PNG` di `artifacts/benchmark/`.
 
 ![Dashboard benchmark Cipherz](artifacts/benchmark/benchmark_dashboard.png)
-
-### Ringkasan Hasil 4 MiB
-
-| Mode | Operasi | C (MiB/s) | Rust (MiB/s) | Rust/C | C (ms) | Rust (ms) |
-| --- | --- | ---: | ---: | ---: | ---: | ---: |
-| CBC | Enkripsi | 116.94 | 167.61 | 1.43x | 34.204 | 23.866 |
-| CBC | Dekripsi | 140.99 | 207.02 | 1.47x | 28.371 | 19.322 |
-| CFB | Enkripsi | 119.13 | 139.71 | 1.17x | 33.578 | 28.631 |
-| CFB | Dekripsi | 144.19 | 195.05 | 1.35x | 27.741 | 20.508 |
-| OFB | Enkripsi | 126.31 | 166.21 | 1.32x | 31.668 | 24.066 |
-| OFB | Dekripsi | 137.39 | 181.59 | 1.32x | 29.114 | 22.028 |
