@@ -120,7 +120,7 @@ cargo run -- bench
 Untuk menghasilkan metrik komprehensif dan dashboard benchmark C vs Rust:
 
 ```bash
-python3 benchmark_metrics.py
+python3 scripts/benchmark_metrics.py
 ```
 
 Script benchmark saat ini hanya mengukur mode yang benar-benar tersedia di kode:
