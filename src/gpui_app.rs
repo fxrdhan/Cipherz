@@ -700,17 +700,19 @@ struct BlockCipherApp {
     decrypt_ciphertext: Entity<TextInput>,
     encrypt_result: String,
     decrypt_result: String,
+    encrypt_notice: String,
+    decrypt_notice: String,
     encrypt_copy_done_until: Option<Instant>,
     decrypt_copy_done_until: Option<Instant>,
 }
 
 impl BlockCipherApp {
     fn new(window: &Window, cx: &mut Context<Self>) -> Self {
-        let encrypt_key = TextInput::new(window, cx, "Key");
-        let encrypt_iv = TextInput::new(window, cx, "IV");
+        let encrypt_key = TextInput::new(window, cx, "Key (16 chars)");
+        let encrypt_iv = TextInput::new(window, cx, "IV (8 chars)");
         let encrypt_plaintext = TextInput::new(window, cx, "Plaintext");
-        let decrypt_key = TextInput::new(window, cx, "Key");
-        let decrypt_iv = TextInput::new(window, cx, "IV");
+        let decrypt_key = TextInput::new(window, cx, "Key (16 chars)");
+        let decrypt_iv = TextInput::new(window, cx, "IV (8 chars)");
         let decrypt_ciphertext = TextInput::new(window, cx, "Ciphertext (hex)");
 
         encrypt_key.update(cx, |input, cx| input.set_value("", cx));
@@ -730,6 +732,8 @@ impl BlockCipherApp {
             decrypt_ciphertext,
             encrypt_result: String::new(),
             decrypt_result: String::new(),
+            encrypt_notice: "Enter a 16-character key and an 8-character IV.".to_string(),
+            decrypt_notice: "Enter a 16-character key and an 8-character IV.".to_string(),
             encrypt_copy_done_until: None,
             decrypt_copy_done_until: None,
         }
@@ -750,19 +754,29 @@ impl BlockCipherApp {
         let iv_text = self.encrypt_iv.read(cx).value();
         let plaintext = self.encrypt_plaintext.read(cx).value();
 
-        let key = derive_bytes::<KEY_SIZE>(&key_text);
-        let iv = derive_bytes::<BLOCK_SIZE>(&iv_text);
-        let encrypted = encrypt_message(self.selected_mode, plaintext.as_bytes(), &key, &iv);
+        let Some(notice) = validate_key_iv(&key_text, &iv_text) else {
+            self.encrypt_result.clear();
+            self.encrypt_notice.clear();
+            self.encrypt_copy_done_until = None;
+            let key = derive_bytes::<KEY_SIZE>(&key_text);
+            let iv = derive_bytes::<BLOCK_SIZE>(&iv_text);
+            let encrypted = encrypt_message(self.selected_mode, plaintext.as_bytes(), &key, &iv);
 
-        self.encrypt_result = hex_string(&encrypted);
+            self.encrypt_result = hex_string(&encrypted);
+            self.decrypt_ciphertext.update(cx, |input, cx| {
+                input.set_value(self.encrypt_result.clone(), cx)
+            });
+            self.decrypt_key
+                .update(cx, |input, cx| input.set_value(key_text, cx));
+            self.decrypt_iv
+                .update(cx, |input, cx| input.set_value(iv_text, cx));
+            cx.notify();
+            return;
+        };
+
+        self.encrypt_result.clear();
+        self.encrypt_notice = notice;
         self.encrypt_copy_done_until = None;
-        self.decrypt_ciphertext.update(cx, |input, cx| {
-            input.set_value(self.encrypt_result.clone(), cx)
-        });
-        self.decrypt_key
-            .update(cx, |input, cx| input.set_value(key_text, cx));
-        self.decrypt_iv
-            .update(cx, |input, cx| input.set_value(iv_text, cx));
         cx.notify();
     }
 
@@ -771,8 +785,17 @@ impl BlockCipherApp {
         let iv_text = self.decrypt_iv.read(cx).value();
         let ciphertext_text = self.decrypt_ciphertext.read(cx).value();
 
+        if let Some(notice) = validate_key_iv(&key_text, &iv_text) {
+            self.decrypt_result.clear();
+            self.decrypt_notice = notice;
+            self.decrypt_copy_done_until = None;
+            cx.notify();
+            return;
+        }
+
         let Some(ciphertext) = hex_to_bytes(&ciphertext_text) else {
             self.decrypt_result.clear();
+            self.decrypt_notice = "Ciphertext must be valid hex.".to_string();
             self.decrypt_copy_done_until = None;
             cx.notify();
             return;
@@ -782,12 +805,15 @@ impl BlockCipherApp {
         let iv = derive_bytes::<BLOCK_SIZE>(&iv_text);
         let Some(plaintext) = decrypt_message(self.selected_mode, &ciphertext, &key, &iv) else {
             self.decrypt_result.clear();
+            self.decrypt_notice =
+                "Decryption failed. Check the mode, key, IV, or padding.".to_string();
             self.decrypt_copy_done_until = None;
             cx.notify();
             return;
         };
 
         self.decrypt_result = String::from_utf8_lossy(&plaintext).into_owned();
+        self.decrypt_notice.clear();
         self.decrypt_copy_done_until = None;
         cx.notify();
     }
@@ -796,6 +822,7 @@ impl BlockCipherApp {
         self.encrypt_plaintext
             .update(cx, |input, cx| input.clear(cx));
         self.encrypt_result.clear();
+        self.encrypt_notice = "Enter a 16-character key and an 8-character IV.".to_string();
         self.encrypt_copy_done_until = None;
         cx.notify();
     }
@@ -804,6 +831,7 @@ impl BlockCipherApp {
         self.decrypt_ciphertext
             .update(cx, |input, cx| input.clear(cx));
         self.decrypt_result.clear();
+        self.decrypt_notice = "Enter a 16-character key and an 8-character IV.".to_string();
         self.decrypt_copy_done_until = None;
         cx.notify();
     }
@@ -963,6 +991,14 @@ impl BlockCipherApp {
             )
     }
 
+    fn render_notice(&self, body: &str) -> impl IntoElement {
+        div()
+            .pt_1()
+            .text_sm()
+            .text_color(rgb(0xB46D72))
+            .child(body.to_string())
+    }
+
     fn render_encrypt_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let mut action_children = vec![
             action_button(
@@ -1040,6 +1076,7 @@ impl BlockCipherApp {
                     .gap_3()
                     .children(action_children),
             )
+            .child(self.render_notice(&self.encrypt_notice))
             .child(self.render_result_card("Ciphertext", &self.encrypt_result))
     }
 
@@ -1120,6 +1157,7 @@ impl BlockCipherApp {
                     .gap_3()
                     .children(action_children),
             )
+            .child(self.render_notice(&self.decrypt_notice))
             .child(self.render_result_card("Plaintext", &self.decrypt_result))
     }
 }
@@ -1284,6 +1322,18 @@ fn action_button(
         .text_color(text_color)
         .font_weight(gpui::FontWeight::SEMIBOLD)
         .child(label.into())
+}
+
+fn validate_key_iv(key_text: &str, iv_text: &str) -> Option<String> {
+    if key_text.len() != KEY_SIZE {
+        return Some(format!("Key must be exactly {} characters.", KEY_SIZE));
+    }
+
+    if iv_text.len() != BLOCK_SIZE {
+        return Some(format!("IV must be exactly {} characters.", BLOCK_SIZE));
+    }
+
+    None
 }
 
 fn save_output_with_dialog(prefix: &str, content: &str) -> std::io::Result<()> {
