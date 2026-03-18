@@ -69,15 +69,15 @@ struct TextInputStyle {
 }
 
 impl TextInputStyle {
-    fn dark() -> Self {
+    fn light() -> Self {
         Self {
-            background: rgb(0x2A2640).into(),
-            border: rgb(0x3D3658).into(),
-            border_focus: rgb(0xB8A9D9).into(),
-            text: rgb(0xE8E0F5).into(),
-            placeholder: rgba(0xB8A9D966).into(),
-            selection: rgba(0xB8A9D933).into(),
-            cursor: rgb(0xB8A9D9).into(),
+            background: rgb(0xFFF9F6).into(),
+            border: rgb(0xD9CBC2).into(),
+            border_focus: rgb(0xCC8F88).into(),
+            text: rgb(0x4A4655).into(),
+            placeholder: rgba(0x8B8293CC).into(),
+            selection: rgba(0xF0C7C199).into(),
+            cursor: rgb(0xB87373).into(),
         }
     }
 }
@@ -108,7 +108,7 @@ impl TextInput {
             last_layout: None,
             last_bounds: None,
             is_selecting: false,
-            style: TextInputStyle::dark(),
+            style: TextInputStyle::light(),
         })
     }
 
@@ -698,7 +698,6 @@ struct BlockCipherApp {
     decrypt_ciphertext: Entity<TextInput>,
     encrypt_result: String,
     decrypt_result: String,
-    status: String,
 }
 
 impl BlockCipherApp {
@@ -727,7 +726,6 @@ impl BlockCipherApp {
             decrypt_ciphertext,
             encrypt_result: String::new(),
             decrypt_result: String::new(),
-            status: "Ready".to_string(),
         }
     }
 
@@ -758,7 +756,6 @@ impl BlockCipherApp {
             .update(cx, |input, cx| input.set_value(key_text, cx));
         self.decrypt_iv
             .update(cx, |input, cx| input.set_value(iv_text, cx));
-        self.status = format!("Encrypted with {}", self.selected_mode.name());
         cx.notify();
     }
 
@@ -769,7 +766,6 @@ impl BlockCipherApp {
 
         let Some(ciphertext) = hex_to_bytes(&ciphertext_text) else {
             self.decrypt_result.clear();
-            self.status = "Invalid hex input".to_string();
             cx.notify();
             return;
         };
@@ -778,13 +774,11 @@ impl BlockCipherApp {
         let iv = derive_bytes::<BLOCK_SIZE>(&iv_text);
         let Some(plaintext) = decrypt_message(self.selected_mode, &ciphertext, &key, &iv) else {
             self.decrypt_result.clear();
-            self.status = "Decrypt failed".to_string();
             cx.notify();
             return;
         };
 
         self.decrypt_result = String::from_utf8_lossy(&plaintext).into_owned();
-        self.status = format!("Decrypted with {}", self.selected_mode.name());
         cx.notify();
     }
 
@@ -792,7 +786,6 @@ impl BlockCipherApp {
         self.encrypt_plaintext
             .update(cx, |input, cx| input.clear(cx));
         self.encrypt_result.clear();
-        self.status = "Encrypt form cleared".to_string();
         cx.notify();
     }
 
@@ -800,7 +793,6 @@ impl BlockCipherApp {
         self.decrypt_ciphertext
             .update(cx, |input, cx| input.clear(cx));
         self.decrypt_result.clear();
-        self.status = "Decrypt form cleared".to_string();
         cx.notify();
     }
 
@@ -813,16 +805,16 @@ impl BlockCipherApp {
     ) -> impl IntoElement {
         let active = self.active_tab == tab;
         let bg: Hsla = if active {
-            rgb(0xB8A9D9).into()
+            rgb(0xE1CEC2).into()
         } else {
-            rgb(0x2A2640).into()
+            rgb(0xFFFDF9).into()
         };
         let fg: Hsla = if active {
-            rgb(0x1E1B2E).into()
+            rgb(0x474250).into()
         } else {
-            rgb(0xB8A9D9).into()
+            rgb(0x7B7287).into()
         };
-        let border: Hsla = rgb(0xB8A9D9).into();
+        let border: Hsla = rgb(0xD1C2B7).into();
 
         div()
             .id(id)
@@ -842,16 +834,16 @@ impl BlockCipherApp {
         let mode = option.mode;
         let active = self.selected_mode == mode;
         let bg: Hsla = if active {
-            rgb(0xF5B8C4).into()
+            rgb(0xF0C9C1).into()
         } else {
-            rgb(0x2A2640).into()
+            rgb(0xFFFDF9).into()
         };
         let fg: Hsla = if active {
-            rgb(0x1E1B2E).into()
+            rgb(0x474250).into()
         } else {
-            rgb(0xF5B8C4).into()
+            rgb(0xB46D72).into()
         };
-        let border: Hsla = rgb(0xF5B8C4).into();
+        let border: Hsla = rgb(0xDEB6B0).into();
         let id = match mode {
             CipherMode::Cbc => "mode-cbc",
             CipherMode::Cfb => "mode-cfb",
@@ -886,25 +878,19 @@ impl BlockCipherApp {
             .flex_col()
             .gap_2()
             .w_full()
-            .p_4()
-            .border_1()
-            .border_color(rgb(0xB8A9D9))
-            .bg(rgb(0x2A2640))
+            .p_1()
             .child(
                 div()
                     .font_weight(gpui::FontWeight::BOLD)
-                    .text_color(rgb(0xFFE8B0))
+                    .text_color(rgb(0xAF6A6F))
                     .child(title.to_string()),
             )
             .child(
                 div()
-                    .p_3()
-                    .border_1()
-                    .border_color(rgb(0x3D3658))
-                    .bg(rgb(0x1E1B2E))
-                    .text_color(rgb(0xA8D8B9))
+                    .pt_1()
+                    .text_color(rgb(0x4E4A59))
                     .text_sm()
-                    .min_h(px(88.))
+                    .min_h(px(28.))
                     .child(if body.is_empty() {
                         "-".to_string()
                     } else {
@@ -927,12 +913,22 @@ impl BlockCipherApp {
                     .flex()
                     .gap_3()
                     .child(
-                        action_button("Encrypt", rgb(0xB8A9D9).into())
+                        action_button(
+                            "Encrypt",
+                            rgb(0xDCCCCF).into(),
+                            rgb(0x474250).into(),
+                            rgb(0xC7B6D9).into(),
+                        )
                             .id("encrypt-now")
                             .on_click(cx.listener(Self::encrypt_now)),
                     )
                     .child(
-                        action_button("Clear", rgb(0x2A2640).into())
+                        action_button(
+                            "Clear",
+                            rgb(0xFFFDF9).into(),
+                            rgb(0x7B7287).into(),
+                            rgb(0xD1C2B7).into(),
+                        )
                             .id("encrypt-clear")
                             .on_click(cx.listener(Self::clear_encrypt)),
                     ),
@@ -954,12 +950,22 @@ impl BlockCipherApp {
                     .flex()
                     .gap_3()
                     .child(
-                        action_button("Decrypt", rgb(0xB8A9D9).into())
+                        action_button(
+                            "Decrypt",
+                            rgb(0xDCCCCF).into(),
+                            rgb(0x474250).into(),
+                            rgb(0xC7B6D9).into(),
+                        )
                             .id("decrypt-now")
                             .on_click(cx.listener(Self::decrypt_now)),
                     )
                     .child(
-                        action_button("Clear", rgb(0x2A2640).into())
+                        action_button(
+                            "Clear",
+                            rgb(0xFFFDF9).into(),
+                            rgb(0x7B7287).into(),
+                            rgb(0xD1C2B7).into(),
+                        )
                             .id("decrypt-clear")
                             .on_click(cx.listener(Self::clear_decrypt)),
                     ),
@@ -978,8 +984,8 @@ impl Render for BlockCipherApp {
 
         div()
             .size_full()
-            .bg(rgb(0x1E1B2E))
-            .text_color(rgb(0xC4BDDD))
+            .bg(rgb(0xFFF9F6))
+            .text_color(rgb(0x656072))
             .child(
                 // Custom titlebar strip (draggable, with window controls on right)
                 div()
@@ -991,9 +997,9 @@ impl Render for BlockCipherApp {
                     .justify_end()
                     .px_3()
                     .gap_2()
-                    .bg(rgb(0x1E1B2E))
+                    .bg(rgb(0x4F495C))
                     .border_b_1()
-                    .border_color(rgb(0x3D3658))
+                    .border_color(rgb(0x3F394A))
                     // Minimize button
                     .child(
                         div()
@@ -1002,7 +1008,7 @@ impl Render for BlockCipherApp {
                             .w(px(16.))
                             .h(px(16.))
                             .rounded_full()
-                            .bg(rgb(0xFFE8B0))
+                            .bg(rgb(0xF2D9A0))
                             .flex()
                             .items_center()
                             .justify_center()
@@ -1018,7 +1024,7 @@ impl Render for BlockCipherApp {
                             .w(px(16.))
                             .h(px(16.))
                             .rounded_full()
-                            .bg(rgb(0xF5B8C4))
+                            .bg(rgb(0xEDB7B1))
                             .flex()
                             .items_center()
                             .justify_center()
@@ -1043,9 +1049,9 @@ impl Render for BlockCipherApp {
                             div()
                                 .w_full()
                                 .p_6()
-                                .bg(rgb(0x1E1B2E))
+                                .bg(rgb(0xFFF9F6))
                                 .border_b_1()
-                                .border_color(rgb(0x3D3658))
+                                .border_color(rgb(0xE6D9D1))
                                 .child(
                                     div()
                                         .max_w(px(1120.))
@@ -1068,10 +1074,10 @@ impl Render for BlockCipherApp {
                                                             div()
                                                                 .text_size(px(28.))
                                                                 .font_weight(gpui::FontWeight::BOLD)
-                                                                .text_color(rgb(0xFFE8B0))
+                                                                .text_color(rgb(0x5E586C))
                                                                 .child("Block Cipher"),
                                                         )
-                                                        .child(div().text_sm().text_color(rgb(0xB8A9D9)).child(
+                                                        .child(div().text_sm().text_color(rgb(0x8B8293)).child(
                                                             "64-bit block | 128-bit key | 8 rounds",
                                                         )),
                                                 ),
@@ -1099,23 +1105,13 @@ impl Render for BlockCipherApp {
                                                 self.render_mode_chip(option, cx).into_any_element()
                                             }),
                                         ))
-                                        .child(
-                                            div()
-                                                .p_4()
-                                                .border_1()
-                                                .border_color(rgb(0x3D3658))
-                                                .bg(rgb(0x2A2640))
-                                                .text_sm()
-                                                .text_color(rgb(0xA8D8B9))
-                                                .child(self.status.clone()),
-                                        ),
                                 ),
                         )
                         .child(
                             div()
                                 .w_full()
                                 .p_6()
-                                .bg(rgb(0x1E1B2E))
+                                .bg(rgb(0xFFF9F6))
                                 .child(div().max_w(px(1120.)).mx_auto().child(panel)),
                         ),
                 ),
@@ -1123,18 +1119,7 @@ impl Render for BlockCipherApp {
     }
 }
 
-fn action_button(label: &'static str, color: Hsla) -> Div {
-    let text_color: Hsla = if color == rgb(0x2A2640).into() {
-        rgb(0xB8A9D9).into()
-    } else {
-        rgb(0x1E1B2E).into()
-    };
-    let border_color: Hsla = if color == rgb(0x2A2640).into() {
-        rgb(0xB8A9D9).into()
-    } else {
-        color
-    };
-
+fn action_button(label: &'static str, color: Hsla, text_color: Hsla, border_color: Hsla) -> Div {
     div()
         .cursor_pointer()
         .px_4()
