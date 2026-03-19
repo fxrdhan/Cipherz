@@ -63,7 +63,12 @@ Instalasi default tidak otomatis menjalankan aplikasi. Jika Anda ingin installer
 curl -fsSL https://raw.githubusercontent.com/fxrdhan/Cipherz/main/install.sh | sh -s -- --run-ui
 ```
 
-Untuk PowerShell Windows, gunakan opsi `-RunUI`.
+Untuk PowerShell Windows, gunakan:
+
+```powershell
+Invoke-WebRequest https://raw.githubusercontent.com/fxrdhan/Cipherz/main/install.ps1 -OutFile install.ps1
+./install.ps1 -RunUI
+```
 
 ## Kompilasi dan Eksekusi dari Kode Sumber
 
