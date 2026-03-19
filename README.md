@@ -47,7 +47,7 @@ Instalasi standar:
 Linux atau macOS:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/fxrdhan/Cipherz/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/fxrdhan/Cipherz/main/install.sh | sh -s --
 ```
 
 PowerShell Windows:
@@ -57,7 +57,13 @@ Invoke-WebRequest https://raw.githubusercontent.com/fxrdhan/Cipherz/main/install
 ./install.ps1
 ```
 
-Instalasi default tidak otomatis menjalankan aplikasi. Gunakan `--run-ui` atau `-RunUI` jika Anda ingin installer langsung membuka GUI setelah proses setup selesai.
+Instalasi default tidak otomatis menjalankan aplikasi. Jika Anda ingin installer langsung membuka GUI setelah setup selesai, gunakan:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fxrdhan/Cipherz/main/install.sh | sh -s -- --run-ui
+```
+
+Untuk PowerShell Windows, gunakan opsi `-RunUI`.
 
 ## Kompilasi dan Eksekusi dari Kode Sumber
 
