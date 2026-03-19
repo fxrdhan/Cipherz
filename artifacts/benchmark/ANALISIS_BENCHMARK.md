@@ -2,7 +2,7 @@
 
 ## Ringkasan hasil
 
-Berdasarkan pengujian benchmark pada mode `CBC`, `CFB`, dan `OFB`, bentuk grafik yang dihasilkan tergolong normal untuk implementasi block cipher edukatif pada repo ini. Benchmark dijalankan terhadap implementasi CLI C dan Rust pada beberapa ukuran data, mulai dari `1 KiB` hingga `4 MiB`, dengan beberapa pengulangan pada setiap ukuran agar dapat dihitung rata-rata dan deviasi standarnya.
+Berdasarkan pengujian benchmark pada mode `CBC`, `CFB`, dan `OFB`, bentuk grafik yang dihasilkan tergolong normal untuk implementasi block cipher edukatif pada repo ini. Benchmark dijalankan terhadap implementasi CLI C dan Rust pada beberapa ukuran data, mulai dari `1 KiB` hingga `16 MiB`, dengan beberapa pengulangan pada setiap ukuran agar dapat dihitung rata-rata dan deviasi standarnya.
 
 Secara umum terlihat bahwa latensi meningkat seiring bertambahnya ukuran data, sedangkan throughput cenderung stabil pada ukuran kecil hingga menengah lalu sedikit menurun pada ukuran data yang lebih besar. Pola ini wajar karena semakin banyak blok yang diproses, semakin besar pula waktu total yang dibutuhkan untuk enkripsi maupun dekripsi.
 
@@ -10,7 +10,7 @@ Secara umum terlihat bahwa latensi meningkat seiring bertambahnya ukuran data, s
 
 ### 1. Latensi meningkat saat ukuran data bertambah
 
-Pada grafik latensi enkripsi dan dekripsi, nilai waktu per iterasi naik saat ukuran data berubah dari `256 KiB` ke `1 MiB`, lalu meningkat lagi pada `4 MiB`. Hal ini normal karena implementasi cipher memproses data per blok 64-bit secara berulang, sehingga semakin besar data masukan maka semakin banyak ronde total yang dijalankan.
+Pada grafik latensi enkripsi dan dekripsi, nilai waktu per iterasi naik saat ukuran data berubah dari `256 KiB` ke `1 MiB`, lalu meningkat lagi pada `4 MiB` dan `16 MiB`. Hal ini normal karena implementasi cipher memproses data per blok 64-bit secara berulang, sehingga semakin besar data masukan maka semakin banyak ronde total yang dijalankan.
 
 ### 2. Throughput relatif stabil lalu menurun
 
