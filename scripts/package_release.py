@@ -27,18 +27,7 @@ def make_executable(path: Path) -> None:
 
 
 def copy_source_tree(repo_root: Path, bundle_dir: Path) -> None:
-    source_files = [
-        "Cargo.toml",
-        "Cargo.lock",
-        "Makefile",
-        "README.md",
-        "DOCUMENTATION.md",
-        "install.sh",
-        "install.ps1",
-    ]
     source_dirs = [
-        "assets",
-        "c",
         "scripts",
         "src",
     ]
@@ -57,11 +46,6 @@ def copy_source_tree(repo_root: Path, bundle_dir: Path) -> None:
         ".DS_Store",
     )
 
-    for file_name in source_files:
-        source_path = repo_root / file_name
-        if source_path.exists():
-            shutil.copy2(source_path, bundle_dir / file_name)
-
     for dir_name in source_dirs:
         source_path = repo_root / dir_name
         if source_path.exists():
@@ -70,6 +54,14 @@ def copy_source_tree(repo_root: Path, bundle_dir: Path) -> None:
                 bundle_dir / dir_name,
                 ignore=ignore_patterns,
             )
+
+    c_source_path = repo_root / "c" / "src"
+    if c_source_path.exists():
+        shutil.copytree(
+            c_source_path,
+            bundle_dir / "c" / "src",
+            ignore=ignore_patterns,
+        )
 
 
 def package_archive(bundle_dir: Path, platform: str, output_path: Path) -> Path:
