@@ -682,21 +682,7 @@ Hal penting:
 - Payload `enc` dan `dec` bisa dibaca dari argumen `argv[5]` atau dari `stdin` jika `argv[5] == "-"`.
 - Opsi `--raw` menghindari encode/decode hex, sehingga cocok untuk alur biner seperti benchmark Python.
 
-## 8. Benchmark Eksternal
-
-Benchmark tetap hidup di `scripts/benchmark_metrics.py`, bukan di `main.c`.
-
-Alurnya sekarang:
-
-- skrip membangun binary C dan Rust yang dibutuhkan,
-- plaintext benchmark dikirim lewat `stdin`,
-- command enkripsi dipanggil dengan `enc ... --raw`,
-- ciphertext hasil enkripsi diteruskan ke `dec ... --raw`,
-- hasilnya ditulis ke `artifacts/benchmark/` sebagai `CSV` dan dashboard `PNG`.
-
-Dengan model ini, benchmark tetap eksternal, sementara `main.c` tetap fokus ke kontrak CLI `enc/dec`.
-
-## 9. Dispatch CLI pada `main()`
+## 8. Dispatch CLI pada `main()`
 
 Fungsi `main()` sekarang membagi operasi menjadi dua command:
 
@@ -744,7 +730,7 @@ Detail perilaku CLI:
 - output enkripsi default tetap hex uppercase,
 - output dekripsi tetap ditulis ke `stdout` secara `binary-safe`; newline hanya ditambahkan pada mode default.
 
-## 10. Daftar Seluruh Fungsi dan Tugasnya
+## 9. Daftar Seluruh Fungsi dan Tugasnya
 
 | Fungsi | Tugas |
 | --- | --- |
@@ -775,7 +761,7 @@ Detail perilaku CLI:
 | `print_usage` | cetak panduan penggunaan CLI |
 | `main` | entry point dan dispatcher command |
 
-## 11. Contoh Penggunaan yang Sudah Diverifikasi
+## 10. Contoh Penggunaan yang Sudah Diverifikasi
 
 Binary C bisa dibangun dari root:
 
@@ -860,11 +846,3 @@ Output:
 ```text
 Firdaus Arif Ramadhani
 ```
-
-### Jalur biner untuk benchmark
-
-```bash
-python3 scripts/benchmark_metrics.py both --samples 1 --target-mib 1 --max-iterations 1
-```
-
-Skrip benchmark memakai `enc ... --raw` dan `dec ... --raw`, sehingga perbandingan `encrypt` dan `decrypt` tidak lagi berat sebelah karena biaya encoding hex di sisi enkripsi.

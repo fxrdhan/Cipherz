@@ -84,12 +84,16 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     binary_suffix = ".exe" if args.platform == "windows" else ""
-    binaries = [
+    required_binaries = [
         ("cipherz_gui", release_dir / f"cipherz_gui{binary_suffix}"),
         ("cipherz_cli", release_dir / f"cipherz_cli{binary_suffix}"),
     ]
+    optional_binaries = [
+        ("block_cipher", repo_root / f"block_cipher{binary_suffix}"),
+        ("block_cipher", release_dir / f"block_cipher{binary_suffix}"),
+    ]
 
-    missing = [name for name, path in binaries if not path.exists()]
+    missing = [name for name, path in required_binaries if not path.exists()]
     if missing:
         raise FileNotFoundError(f"missing release binaries: {', '.join(missing)}")
 
@@ -102,11 +106,22 @@ def main() -> int:
         bundle_dir = tmp_root / f"Cipherz-{args.platform}-{args.arch}"
         bundle_dir.mkdir(parents=True, exist_ok=True)
 
-        for _, source_path in binaries:
+        for _, source_path in required_binaries:
             target_path = bundle_dir / source_path.name
             shutil.copy2(source_path, target_path)
             if args.platform != "windows":
                 make_executable(target_path)
+
+        bundled_optional_names: set[str] = set()
+        for bundle_name, source_path in optional_binaries:
+            if bundle_name in bundled_optional_names or not source_path.exists():
+                continue
+
+            target_path = bundle_dir / source_path.name
+            shutil.copy2(source_path, target_path)
+            if args.platform != "windows":
+                make_executable(target_path)
+            bundled_optional_names.add(bundle_name)
 
         copy_source_tree(repo_root, bundle_dir)
         package_archive(bundle_dir, args.platform, output_path)

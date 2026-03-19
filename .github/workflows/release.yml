@@ -113,6 +113,10 @@ jobs:
       - name: Build release binaries
         run: cargo build --release --bin cipherz_gui --bin cipherz_cli
 
+      - name: Build bundled C backend
+        if: runner.os != 'Windows'
+        run: make
+
       - name: Package release archive
         shell: bash
         run: |
