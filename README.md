@@ -100,6 +100,17 @@ Hasilkan benchmark dan dashboard perbandingan lengkap lewat skrip Python:
 python3 scripts/benchmark_metrics.py
 ```
 
-Skrip benchmark memakai jalur `enc/dec --raw` agar ciphertext dipindahkan sebagai bytes mentah, jadi hasil `encrypt` dan `decrypt` tidak bias oleh overhead encoding hex.
+Benchmark memakai jalur `enc/dec --raw` agar ciphertext dipindahkan sebagai bytes mentah sehingga hasil `encrypt` dan `decrypt` tidak bias oleh overhead encoding hex.
+
+| Skenario | C (MiB/s) | Rust (MiB/s) | Kenaikan Rust |
+| --- | ---: | ---: | ---: |
+| CBC Encrypt | 57.36 | 72.55 | 26.48% |
+| CBC Decrypt | 62.40 | 77.64 | 24.42% |
+| CFB Encrypt | 53.39 | 64.19 | 20.23% |
+| CFB Decrypt | 57.60 | 73.87 | 28.25% |
+| OFB Encrypt | 58.99 | 71.34 | 20.94% |
+| OFB Decrypt | 61.85 | 74.78 | 20.91% |
+
+Data memperlihatkan bahwa implementasi Rust menjaga throughput yang lebih tinggi pada seluruh skenario utama, dengan uplift sekitar 20-28% dibanding implementasi C.
 
 ![Dashboard benchmark Cipherz](artifacts/benchmark/benchmark_dashboard.png)
