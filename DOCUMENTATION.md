@@ -31,7 +31,8 @@ Implementasi ini memakai:
 - fungsi ronde berbasis `XOR -> nibble S-Box -> rotasi/permutasi`,
 - tiga mode operasi: `CBC`, `CFB`, `OFB`,
 - `PKCS#7` hanya untuk `CBC`,
-- payload CLI bisa diberikan langsung lewat argumen atau dibaca dari `stdin` dengan argumen `-`.
+- payload CLI bisa diberikan langsung lewat argumen atau dibaca dari `stdin` dengan argumen `-`,
+- opsi `--raw` membuat ciphertext diproses sebagai bytes mentah tanpa encoding hex.
 
 ## 3. Tampilan GUI
 
@@ -71,9 +72,9 @@ argv -> validasi command
      -> parse mode
      -> derive key dan iv dari string
      -> enc:
-          plaintext arg/stdin -> encrypt_message() -> print_hex()
+          plaintext arg/stdin -> encrypt_message() -> raw stdout / print_hex()
      -> dec:
-          ciphertext_hex arg/stdin -> hex_to_bytes() -> decrypt_message() -> stdout
+          ciphertext raw/hex arg/stdin -> [hex_to_bytes bila perlu] -> decrypt_message() -> stdout
 ```
 
 ## 5. Penjelasan Per Bagian Kode
@@ -443,22 +444,23 @@ Fungsi ini membebaskan memori lalu mereset `pointer` dan `len`. Pola ini dipakai
 
 Kedua helper ini mendukung mode payload `-` pada CLI:
 
-- `read_stdin_all` membaca seluruh isi `stdin` ke dalam `Buffer`, baik untuk plaintext enkripsi maupun ciphertext hex saat dekripsi.
-- `trim_trailing_line_endings` menghapus `\n` atau `\r\n` di ujung input `stdin` agar ciphertext hex dari pipe tetap valid.
+- `read_stdin_all` membaca seluruh isi `stdin` ke dalam `Buffer`, baik untuk plaintext enkripsi maupun ciphertext saat dekripsi.
+- `trim_trailing_line_endings` menghapus `\n` atau `\r\n` di ujung input `stdin` agar ciphertext hex dari pipe tetap valid saat mode default dipakai.
 
 #### `print_usage`
 
 ```c
 static void print_usage(const char *program) {
     printf("Usage:\n");
-    printf("  %s enc <mode> <key16> <iv8> <plaintext|->\n", program);
-    printf("  %s dec <mode> <key16> <iv8> <ciphertext_hex|->\n\n", program);
+    printf("  %s enc <mode> <key16> <iv8> <plaintext|-> [--raw]\n", program);
+    printf("  %s dec <mode> <key16> <iv8> <ciphertext_hex|-> [--raw]\n\n", program);
     printf("Modes: cbc, cfb, ofb\n");
     printf("Catatan:\n");
     printf("- Key diambil dari 16 karakter pertama.\n");
     printf("- IV diambil dari 8 karakter pertama.\n");
     printf("- CBC memakai padding PKCS#7.\n");
     printf("- Gunakan '-' sebagai payload untuk membaca data dari stdin.\n");
+    printf("- Tambahkan '--raw' agar ciphertext diproses sebagai bytes mentah.\n");
 }
 ```
 
@@ -678,24 +680,28 @@ Hal penting:
 - `CBC` dekripsi gagal jika panjang ciphertext bukan kelipatan 8 byte.
 - `CFB` dan `OFB` bisa memproses panjang berapa pun.
 - Payload `enc` dan `dec` bisa dibaca dari argumen `argv[5]` atau dari `stdin` jika `argv[5] == "-"`.
+- Opsi `--raw` menghindari encode/decode hex, sehingga cocok untuk alur biner seperti benchmark Python.
 
 ## 8. Benchmark Eksternal
 
-Benchmark tidak lagi dijalankan dari `main.c`. Seluruh pengukuran dipindahkan ke skrip Python:
+Benchmark tetap hidup di `scripts/benchmark_metrics.py`, bukan di `main.c`.
 
-- `scripts/benchmark_metrics.py` membangun binary C dan Rust yang diperlukan,
-- skrip lalu memanggil command `enc` dan `dec` untuk tiap mode,
-- payload dikirim lewat `stdin` agar ukuran data benchmark tidak dibatasi panjang argumen shell,
-- hasilnya disimpan ke `artifacts/benchmark/` dalam bentuk `CSV` dan dashboard `PNG`.
+Alurnya sekarang:
 
-Dengan pemisahan ini, `main.c` kembali fokus ke logika cipher dan kontrak CLI `enc/dec`, sedangkan benchmark hidup sebagai tooling eksternal.
+- skrip membangun binary C dan Rust yang dibutuhkan,
+- plaintext benchmark dikirim lewat `stdin`,
+- command enkripsi dipanggil dengan `enc ... --raw`,
+- ciphertext hasil enkripsi diteruskan ke `dec ... --raw`,
+- hasilnya ditulis ke `artifacts/benchmark/` sebagai `CSV` dan dashboard `PNG`.
+
+Dengan model ini, benchmark tetap eksternal, sementara `main.c` tetap fokus ke kontrak CLI `enc/dec`.
 
 ## 9. Dispatch CLI pada `main()`
 
 Fungsi `main()` sekarang membagi operasi menjadi dua command:
 
-- `enc <mode> <key16> <iv8> <plaintext|->`
-- `dec <mode> <key16> <iv8> <ciphertext_hex|->`
+- `enc <mode> <key16> <iv8> <plaintext|-> [--raw]`
+- `dec <mode> <key16> <iv8> <ciphertext_hex|-> [--raw]`
 
 Lalu parsing mode dan derivasi key/IV:
 
@@ -720,21 +726,23 @@ Cabang enkripsi memilih sumber plaintext:
 - jika `argv[5]` adalah teks biasa, plaintext dibaca langsung dari argumen,
 - jika `argv[5] == "-"`, plaintext dibaca penuh dari `stdin` lewat `read_stdin_all`.
 
-Setelah itu, buffer tersebut dikirim ke `encrypt_message()` lalu hasilnya dicetak oleh `print_hex()`.
+Setelah itu, buffer tersebut dikirim ke `encrypt_message()`. Jika `--raw` tidak dipakai, hasil dicetak oleh `print_hex()`. Jika `--raw` dipakai, ciphertext ditulis langsung ke `stdout` sebagai bytes mentah tanpa newline tambahan.
 
-Cabang dekripsi memilih sumber ciphertext hex dengan aturan yang sama:
+Cabang dekripsi memilih sumber ciphertext dengan aturan yang sama:
 
-- argumen biasa dipakai langsung,
+- pada mode default, ciphertext diperlakukan sebagai string hex,
 - `-` membuat program membaca seluruh `stdin`,
-- jika input datang dari `stdin`, newline di ujung akan dibuang oleh `trim_trailing_line_endings`,
-- string hex lalu diubah ke bytes oleh `hex_to_bytes()` sebelum dikirim ke `decrypt_message()`.
+- jika input hex datang dari `stdin`, newline di ujung akan dibuang oleh `trim_trailing_line_endings`,
+- pada mode default, string hex diubah ke bytes oleh `hex_to_bytes()` sebelum dikirim ke `decrypt_message()`,
+- jika `--raw` dipakai, ciphertext dibaca apa adanya sebagai bytes mentah tanpa parsing hex.
 
 Detail perilaku CLI:
 
 - plaintext enkripsi bisa datang dari argumen atau `stdin`,
-- ciphertext dekripsi harus tetap berupa hex valid, baik dari argumen maupun `stdin`,
-- output enkripsi selalu hex uppercase,
-- output dekripsi ditulis ke `stdout` secara `binary-safe` lewat `fwrite(...)` lalu diakhiri newline.
+- ciphertext dekripsi default-nya berupa hex valid, baik dari argumen maupun `stdin`,
+- `--raw` membuat output enkripsi dan input dekripsi memakai ciphertext biner mentah,
+- output enkripsi default tetap hex uppercase,
+- output dekripsi tetap ditulis ke `stdout` secara `binary-safe`; newline hanya ditambahkan pada mode default.
 
 ## 10. Daftar Seluruh Fungsi dan Tugasnya
 
@@ -853,10 +861,10 @@ Output:
 Firdaus Arif Ramadhani
 ```
 
-### Benchmark lewat skrip Python
+### Jalur biner untuk benchmark
 
 ```bash
 python3 scripts/benchmark_metrics.py both --samples 1 --target-mib 1 --max-iterations 1
 ```
 
-Perintah ini akan membuat `benchmark_results.csv`, `benchmark_summary.csv`, dan `benchmark_dashboard.png` di `artifacts/benchmark/`.
+Skrip benchmark memakai `enc ... --raw` dan `dec ... --raw`, sehingga perbandingan `encrypt` dan `decrypt` tidak lagi berat sebelah karena biaya encoding hex di sisi enkripsi.

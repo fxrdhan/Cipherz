@@ -100,4 +100,6 @@ Hasilkan benchmark dan dashboard perbandingan lengkap lewat skrip Python:
 python3 scripts/benchmark_metrics.py
 ```
 
+Skrip benchmark memakai jalur `enc/dec --raw` agar ciphertext dipindahkan sebagai bytes mentah, jadi hasil `encrypt` dan `decrypt` tidak bias oleh overhead encoding hex.
+
 ![Dashboard benchmark Cipherz](artifacts/benchmark/benchmark_dashboard.png)

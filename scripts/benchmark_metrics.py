@@ -160,14 +160,11 @@ def generate_plaintext(size_bytes: int) -> bytes:
     return (PLAINTEXT_PATTERN * repeats)[:size_bytes]
 
 
-def trim_cli_output(output: bytes) -> bytes:
-    return output.rstrip(b"\r\n")
-
-
 def run_cli_command(
     implementation: str,
     args: list[str],
     stdin_bytes: bytes,
+    trim_text_output: bool = False,
 ) -> tuple[float, bytes]:
     spec = IMPLEMENTATIONS[implementation]
     started_at = time.perf_counter()
@@ -179,7 +176,8 @@ def run_cli_command(
         capture_output=True,
     )
     elapsed = time.perf_counter() - started_at
-    return elapsed, trim_cli_output(result.stdout)
+    output = result.stdout.rstrip(b"\r\n") if trim_text_output else result.stdout
+    return elapsed, output
 
 
 def benchmark_mode(
@@ -195,7 +193,7 @@ def benchmark_mode(
     for _ in range(iterations):
         elapsed, last_ciphertext = run_cli_command(
             implementation,
-            ["enc", mode, KEY_TEXT, IV_TEXT, "-"],
+            ["enc", mode, KEY_TEXT, IV_TEXT, "-", "--raw"],
             plaintext,
         )
         enc_total_seconds += elapsed
@@ -204,7 +202,7 @@ def benchmark_mode(
     for _ in range(iterations):
         elapsed, last_plaintext = run_cli_command(
             implementation,
-            ["dec", mode, KEY_TEXT, IV_TEXT, "-"],
+            ["dec", mode, KEY_TEXT, IV_TEXT, "-", "--raw"],
             last_ciphertext,
         )
         dec_total_seconds += elapsed

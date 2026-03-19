@@ -318,14 +318,15 @@ pub fn decrypt_message(
 
 fn print_usage(program: &str) {
     println!("Usage:");
-    println!("  {program} enc <mode> <key16> <iv8> <plaintext|->");
-    println!("  {program} dec <mode> <key16> <iv8> <ciphertext_hex|->\n");
+    println!("  {program} enc <mode> <key16> <iv8> <plaintext|-> [--raw]");
+    println!("  {program} dec <mode> <key16> <iv8> <ciphertext_hex|-> [--raw]\n");
     println!("Modes: cbc, cfb, ofb");
     println!("Catatan:");
     println!("- Key diambil dari 16 karakter pertama.");
     println!("- IV diambil dari 8 karakter pertama.");
     println!("- CBC memakai padding PKCS#7.");
     println!("- Gunakan `-` sebagai payload untuk membaca data dari stdin.");
+    println!("- Tambahkan `--raw` agar ciphertext diproses sebagai bytes mentah.");
 }
 
 fn read_stdin_all() -> io::Result<Vec<u8>> {
@@ -344,10 +345,21 @@ pub fn run_cli() -> i32 {
     let args: Vec<String> = std::env::args().collect();
     let program = args.first().map(String::as_str).unwrap_or("block_cipher");
 
-    if args.len() != 6 {
+    if args.len() != 6 && args.len() != 7 {
         print_usage(program);
         return 1;
     }
+
+    let use_raw = if args.len() == 7 {
+        if args[6] != "--raw" {
+            eprintln!("Opsi tidak dikenal: {}", args[6]);
+            print_usage(program);
+            return 1;
+        }
+        true
+    } else {
+        false
+    };
 
     let Some(mode) = CipherMode::parse(&args[2]) else {
         eprintln!("Mode tidak dikenal: {}", args[2]);
@@ -376,28 +388,51 @@ pub fn run_cli() -> i32 {
         };
 
         let encrypted = encrypt_message(mode, &plaintext, &key, &iv);
-        println!("{}", hex_string(&encrypted));
+        if use_raw {
+            let mut stdout = io::stdout().lock();
+            if stdout.write_all(&encrypted).is_err() {
+                eprintln!("Gagal menulis output.");
+                return 1;
+            }
+        } else {
+            println!("{}", hex_string(&encrypted));
+        }
         return 0;
     }
 
     if args[1] == "dec" {
-        let ciphertext_input = if args[5] == "-" {
-            let mut stdin_bytes = match read_stdin_all() {
-                Ok(stdin_bytes) => stdin_bytes,
-                Err(error) => {
-                    eprintln!("Gagal membaca stdin: {error}");
-                    return 1;
+        let ciphertext = if use_raw {
+            if args[5] == "-" {
+                match read_stdin_all() {
+                    Ok(stdin_bytes) => stdin_bytes,
+                    Err(error) => {
+                        eprintln!("Gagal membaca stdin: {error}");
+                        return 1;
+                    }
                 }
-            };
-            trim_trailing_line_endings(&mut stdin_bytes);
-            String::from_utf8_lossy(&stdin_bytes).into_owned()
+            } else {
+                args[5].as_bytes().to_vec()
+            }
         } else {
-            args[5].clone()
-        };
+            let ciphertext_input = if args[5] == "-" {
+                let mut stdin_bytes = match read_stdin_all() {
+                    Ok(stdin_bytes) => stdin_bytes,
+                    Err(error) => {
+                        eprintln!("Gagal membaca stdin: {error}");
+                        return 1;
+                    }
+                };
+                trim_trailing_line_endings(&mut stdin_bytes);
+                String::from_utf8_lossy(&stdin_bytes).into_owned()
+            } else {
+                args[5].clone()
+            };
 
-        let Some(ciphertext) = hex_to_bytes(&ciphertext_input) else {
-            eprintln!("Ciphertext hex tidak valid.");
-            return 1;
+            let Some(ciphertext) = hex_to_bytes(&ciphertext_input) else {
+                eprintln!("Ciphertext hex tidak valid.");
+                return 1;
+            };
+            ciphertext
         };
 
         let Some(decrypted) = decrypt_message(mode, &ciphertext, &key, &iv) else {
@@ -406,7 +441,7 @@ pub fn run_cli() -> i32 {
         };
 
         let mut stdout = io::stdout().lock();
-        if stdout.write_all(&decrypted).is_err() || stdout.write_all(b"\n").is_err() {
+        if stdout.write_all(&decrypted).is_err() || (!use_raw && stdout.write_all(b"\n").is_err()) {
             eprintln!("Gagal menulis output.");
             return 1;
         }

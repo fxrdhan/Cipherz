@@ -393,14 +393,15 @@ static void free_buffer(Buffer *buffer) {
 
 static void print_usage(const char *program) {
     printf("Usage:\n");
-    printf("  %s enc <mode> <key16> <iv8> <plaintext|->\n", program);
-    printf("  %s dec <mode> <key16> <iv8> <ciphertext_hex|->\n\n", program);
+    printf("  %s enc <mode> <key16> <iv8> <plaintext|-> [--raw]\n", program);
+    printf("  %s dec <mode> <key16> <iv8> <ciphertext_hex|-> [--raw]\n\n", program);
     printf("Modes: cbc, cfb, ofb\n");
     printf("Catatan:\n");
     printf("- Key diambil dari 16 karakter pertama.\n");
     printf("- IV diambil dari 8 karakter pertama.\n");
     printf("- CBC memakai padding PKCS#7.\n");
     printf("- Gunakan '-' sebagai payload untuk membaca data dari stdin.\n");
+    printf("- Tambahkan '--raw' agar ciphertext diproses sebagai bytes mentah.\n");
 }
 
 static Buffer read_stdin_all(void) {
@@ -464,10 +465,20 @@ static void trim_trailing_line_endings(Buffer *buffer) {
 int main(int argc, char *argv[]) {
     uint8_t key[KEY_SIZE];
     uint8_t iv[BLOCK_SIZE];
+    int use_raw = 0;
 
-    if (argc != 6) {
+    if (argc != 6 && argc != 7) {
         print_usage(argv[0]);
         return 1;
+    }
+
+    if (argc == 7) {
+        if (strcmp(argv[6], "--raw") != 0) {
+            fprintf(stderr, "Opsi tidak dikenal: %s\n", argv[6]);
+            print_usage(argv[0]);
+            return 1;
+        }
+        use_raw = 1;
     }
 
     CipherMode mode = parse_mode(argv[2]);
@@ -506,36 +517,61 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "Enkripsi gagal.\n");
             return 1;
         }
-        print_hex(encrypted.data, encrypted.len);
+        if (use_raw) {
+            if (fwrite(encrypted.data, 1, encrypted.len, stdout) != encrypted.len) {
+                fprintf(stderr, "Gagal menulis output.\n");
+                free_buffer(&encrypted);
+                return 1;
+            }
+        } else {
+            print_hex(encrypted.data, encrypted.len);
+        }
         free_buffer(&encrypted);
         return 0;
     }
 
     if (strcmp(argv[1], "dec") == 0) {
-        Buffer ciphertext_hex = {NULL, 0};
-        Buffer ciphertext;
+        Buffer ciphertext = {NULL, 0};
+        if (use_raw) {
+            if (strcmp(argv[5], "-") == 0) {
+                ciphertext = read_stdin_all();
+                if (ciphertext.data == NULL) {
+                    fprintf(stderr, "Gagal membaca ciphertext dari stdin.\n");
+                    return 1;
+                }
+            } else {
+                ciphertext = clone_buffer((const uint8_t *)argv[5], strlen(argv[5]));
+            }
+        } else {
+            Buffer ciphertext_hex = {NULL, 0};
 
-        if (strcmp(argv[5], "-") == 0) {
-            ciphertext_hex = read_stdin_all();
+            if (strcmp(argv[5], "-") == 0) {
+                ciphertext_hex = read_stdin_all();
+                if (ciphertext_hex.data == NULL) {
+                    fprintf(stderr, "Gagal membaca ciphertext dari stdin.\n");
+                    return 1;
+                }
+                trim_trailing_line_endings(&ciphertext_hex);
+            } else {
+                ciphertext_hex = clone_buffer((const uint8_t *)argv[5], strlen(argv[5]));
+            }
+
             if (ciphertext_hex.data == NULL) {
-                fprintf(stderr, "Gagal membaca ciphertext dari stdin.\n");
+                fprintf(stderr, "Ciphertext hex tidak valid.\n");
                 return 1;
             }
-            trim_trailing_line_endings(&ciphertext_hex);
-        } else {
-            ciphertext_hex = clone_buffer((const uint8_t *)argv[5], strlen(argv[5]));
-        }
 
-        if (ciphertext_hex.data == NULL) {
-            fprintf(stderr, "Ciphertext hex tidak valid.\n");
-            return 1;
-        }
+            ciphertext = hex_to_bytes((const char *)ciphertext_hex.data);
+            free_buffer(&ciphertext_hex);
 
-        ciphertext = hex_to_bytes((const char *)ciphertext_hex.data);
-        free_buffer(&ciphertext_hex);
+            if (ciphertext.data == NULL) {
+                fprintf(stderr, "Ciphertext hex tidak valid.\n");
+                return 1;
+            }
+        }
 
         if (ciphertext.data == NULL) {
-            fprintf(stderr, "Ciphertext hex tidak valid.\n");
+            fprintf(stderr, "Gagal membaca ciphertext.\n");
             return 1;
         }
 
@@ -547,7 +583,8 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
-        if (fwrite(decrypted.data, 1, decrypted.len, stdout) != decrypted.len || fputc('\n', stdout) == EOF) {
+        if (fwrite(decrypted.data, 1, decrypted.len, stdout) != decrypted.len
+            || (!use_raw && fputc('\n', stdout) == EOF)) {
             fprintf(stderr, "Gagal menulis output.\n");
             free_buffer(&decrypted);
             return 1;
