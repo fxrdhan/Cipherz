@@ -9,6 +9,7 @@ Mode `OFB` menghasilkan keystream dari `IV` melalui proses enkripsi block cipher
 ```text
 .
 |-- Makefile
+|-- DOCUMENTATION.md
 |-- README.md
 `-- main.c
 ```
@@ -17,6 +18,7 @@ Peran file:
 
 - `main.c`: implementasi block cipher, mode `OFB`, parsing argumen, encoding hex, dan output command line.
 - `Makefile`: konfigurasi build dengan `gcc`.
+- `DOCUMENTATION.md`: dokumentasi teknis lengkap untuk struktur kode, alur data, fungsi, dan build.
 - `README.md`: dokumentasi penggunaan dan ringkasan implementasi.
 
 ## Spesifikasi
