@@ -1,9 +1,4 @@
-.benchmark_build/
-.ruff_cache/
+block_cipher
+dist/
 __pycache__/
 *.pyc
-
-block_cipher
-target/
-artifacts/benchmark/__pycache__/
-dist/

@@ -1,9 +1,14 @@
+CC = gcc
+CFLAGS = -std=c11 -Wall -Wextra -pedantic -O2
 TARGET = block_cipher
+SRC = main.c
 
-all:
-	$(MAKE) -C c TARGET=../$(TARGET)
+all: $(TARGET)
+
+$(TARGET): $(SRC)
+	$(CC) $(CFLAGS) -o $(TARGET) $(SRC)
 
 clean:
-	$(MAKE) -C c clean TARGET=../$(TARGET)
+	rm -f $(TARGET)
 
 .PHONY: all clean
