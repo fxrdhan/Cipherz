@@ -85,7 +85,8 @@ Isi proyek yang relevan:
 main.c
 Makefile
 README.md
-DOCUMENTATION.md
+docs/DOCUMENTATION.md
+docs/PERSIAPAN_UJI_KODE.md
 ```
 
 Peran file:
@@ -95,7 +96,8 @@ Peran file:
 | `main.c` | Implementasi cipher, mode OFB, parser argumen, parser hex, dan fungsi `main` |
 | `Makefile` | Instruksi build dan clean |
 | `README.md` | Ringkasan singkat penggunaan |
-| `DOCUMENTATION.md` | Dokumentasi teknis lengkap |
+| `docs/DOCUMENTATION.md` | Dokumentasi teknis lengkap |
+| `docs/PERSIAPAN_UJI_KODE.md` | Latihan perubahan kode dan skenario uji pemahaman |
 
 Program tidak memecah kode ke banyak file. Semua fungsi C berada di `main.c`, sehingga alur program dapat ditelusuri dari atas ke bawah dalam satu file.
 
