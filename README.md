@@ -38,6 +38,19 @@ output_i = input_i XOR keystream_i
 
 Karena `OFB` bekerja sebagai stream mode, panjang ciphertext sama dengan panjang plaintext. Padding tidak digunakan.
 
+Contoh utama pada project ini memakai dua plaintext:
+
+```text
+Contoh 1 block:
+plaintext = "arif"
+block 1   = "arif"          (4 byte, block parsial)
+
+Contoh 2 block:
+plaintext = "firdaus arif"
+block 1   = "firdaus "      (8 byte, block penuh)
+block 2   = "arif"          (4 byte, block parsial)
+```
+
 ## Build
 
 ```bash
@@ -70,28 +83,40 @@ Dekripsi:
 ./block_cipher dec <key16> <iv8> <ciphertext_hex>
 ```
 
-Contoh enkripsi:
+Contoh enkripsi 1 block:
 
 ```bash
-./block_cipher enc KAMSIS-KEY-2026 IV2026!! "halo"
+./block_cipher enc KUNCI-1NGG121S ADA123!! "arif"
 ```
 
 Contoh output:
 
 ```text
-7CBBFA5F
+332B5FA1
+```
+
+Contoh enkripsi 2 block:
+
+```bash
+./block_cipher enc KUNCI-1NGG121S ADA123!! "firdaus arif"
+```
+
+Contoh output:
+
+```text
+343044A3CF442F1AB954B9C6
 ```
 
 Contoh dekripsi:
 
 ```bash
-./block_cipher dec KAMSIS-KEY-2026 IV2026!! 7CBBFA5F
+./block_cipher dec KUNCI-1NGG121S ADA123!! 343044A3CF442F1AB954B9C6
 ```
 
 Contoh output:
 
 ```text
-halo
+firdaus arif
 ```
 
 ## Format Input
@@ -109,4 +134,3 @@ Argumen `ciphertext_hex` wajib berupa hexadecimal dengan jumlah karakter genap. 
 Perintah `enc` menghasilkan ciphertext dalam hexadecimal uppercase dan newline.
 
 Perintah `dec` menghasilkan plaintext hasil dekripsi dan newline.
-
