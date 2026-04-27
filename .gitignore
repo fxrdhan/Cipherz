@@ -2,3 +2,4 @@ block_cipher
 dist/
 __pycache__/
 *.pyc
+*.bak
