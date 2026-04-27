@@ -1,17 +1,8 @@
-# OFB Cipher CLI in C: Dokumentasi Teknis
+# Dokumentasi Teknis
 
 Dokumen ini menjelaskan program `OFB Cipher CLI` dari awal sampai akhir. Fokusnya bukan hanya cara menjalankan program, tetapi juga cara membaca kode C-nya, bagaimana data bergerak di memori, bagaimana block cipher menghasilkan keystream, dan bagaimana mode `OFB` memakai keystream tersebut untuk enkripsi dan dekripsi.
 
 Program utama berada di file `main.c`. Proses build diatur oleh `Makefile`. Binary hasil build bernama `block_cipher`.
-
-Dokumen ini disusun dengan pola yang konsisten:
-
-- **Tujuan**: menjelaskan peran bagian kode.
-- **Kode**: menampilkan potongan kode yang sedang dibahas.
-- **Cara membaca sintaks**: membedah alur sintaks C jika bagian tersebut rawan membingungkan.
-- **Alur kerja**: menjelaskan apa yang terjadi saat program berjalan.
-- **Contoh**: memberi gambaran konkret pada level byte, hex, atau command line.
-- **Catatan penting**: menandai batasan, konsekuensi desain, atau hal yang perlu diingat.
 
 ## Ringkasan Sistem
 
@@ -625,7 +616,7 @@ secara tujuan: rotate kiri
 secara sintaks: shift kiri + shift kanan + OR
 ```
 
-### Cara Membaca Sintaks `rotl32`
+### `rotl32`
 
 Header fungsi:
 
@@ -712,7 +703,7 @@ src[2] = byte rendah berikutnya
 src[3] = byte paling rendah
 ```
 
-### Cara Membaca Sintaks `read_u32_be`
+### `read_u32_be`
 
 Parameter:
 
@@ -793,7 +784,7 @@ Tujuan:
 
 `write_u32_be` melakukan kebalikan dari `read_u32_be`. Fungsi ini memecah satu word 32-bit menjadi 4 byte big-endian.
 
-### Cara Membaca Sintaks `write_u32_be`
+### `write_u32_be`
 
 Parameter:
 
@@ -881,7 +872,7 @@ Karena:
 
 maka loop berjalan 8 kali.
 
-### Cara Membaca Sintaks `substitute_word`
+### `substitute_word`
 
 Inisialisasi:
 
@@ -960,7 +951,7 @@ Tujuan:
 
 `permute_word` menyebarkan perubahan bit melalui beberapa rotasi dan XOR.
 
-### Cara Membaca Sintaks `permute_word`
+### `permute_word`
 
 Statement return:
 
@@ -1007,7 +998,7 @@ Tujuan:
 
 `round_function` adalah fungsi inti pada ronde Feistel. Fungsi ini menerima bagian kanan blok dan satu round key.
 
-### Cara Membaca Sintaks `round_function`
+### `round_function`
 
 Statement return:
 
@@ -1073,7 +1064,7 @@ Tujuan:
 
 `generate_round_keys` mengubah key 16 byte menjadi 8 round key. Setiap round key berukuran 32 bit.
 
-### Cara Membaca Sintaks `generate_round_keys`
+### `generate_round_keys`
 
 Parameter:
 
@@ -1207,7 +1198,7 @@ Tujuan:
 
 `encrypt_block` menerima 8 byte input dan menghasilkan 8 byte output melalui jaringan Feistel 8 ronde.
 
-### Cara Membaca Sintaks `encrypt_block`
+### `encrypt_block`
 
 Pemecahan blok:
 
@@ -1278,7 +1269,7 @@ Tujuan:
 
 `copy_text_bytes` menyalin argumen teks ke buffer byte berukuran tetap. Fungsi ini dipakai untuk membentuk key dan IV internal.
 
-### Cara Membaca Sintaks `copy_text_bytes`
+### `copy_text_bytes`
 
 Parameter:
 
@@ -1375,7 +1366,7 @@ Tujuan:
 
 `ofb_crypt` adalah fungsi pemrosesan data utama. Fungsi ini dipakai untuk enkripsi dan dekripsi.
 
-### Cara Membaca Sintaks `ofb_crypt`
+### `ofb_crypt`
 
 Buffer lokal:
 
@@ -1491,7 +1482,7 @@ Tujuan:
 
 `hex_value` mengubah satu karakter hex menjadi nilai 0 sampai 15.
 
-### Cara Membaca Sintaks `hex_value`
+### `hex_value`
 
 Percabangan pertama:
 
@@ -1577,7 +1568,7 @@ Tujuan:
 
 `hex_to_bytes` mengubah string hex menjadi buffer byte. Fungsi ini dipakai pada mode dekripsi.
 
-### Cara Membaca Sintaks `hex_to_bytes`
+### `hex_to_bytes`
 
 Hitung panjang:
 
@@ -1672,7 +1663,7 @@ Tujuan:
 
 `print_hex` mencetak byte array sebagai hexadecimal uppercase.
 
-### Cara Membaca Sintaks `print_hex`
+### `print_hex`
 
 Loop:
 
@@ -1729,7 +1720,7 @@ Tujuan:
 
 `print_usage` mencetak format penggunaan program.
 
-### Cara Membaca Sintaks `print_usage`
+### `print_usage`
 
 Parameter:
 
@@ -2154,29 +2145,6 @@ Target ini menghapus binary hasil build.
 
 Baris ini memberi tahu `make` bahwa `all` dan `clean` adalah nama target perintah, bukan file biasa.
 
-## Batasan Implementasi
-
-Batasan program:
-
-- Hanya mendukung mode `OFB`.
-- Tidak mendukung `CBC`, `CFB`, `CTR`, atau mode lain.
-- Tidak memakai padding.
-- Tidak membaca dari `stdin`.
-- Tidak membaca atau menulis file.
-- Tidak menyediakan opsi input biner mentah.
-- Plaintext command line tidak dapat memuat byte `NUL`.
-- Key dan IV berasal dari argumen teks.
-- Tidak ada autentikasi ciphertext.
-- Tidak ada verifikasi bahwa hasil dekripsi benar.
-- Cipher kustom ini bersifat edukatif.
-
-Konsekuensi:
-
-- Input biner penuh tidak cocok diproses melalui antarmuka ini.
-- Salah key atau salah IV tetap menghasilkan output, tetapi output tidak valid sebagai plaintext asli.
-- Perubahan ciphertext tidak terdeteksi otomatis.
-- Untuk kebutuhan keamanan nyata, gunakan library kriptografi resmi.
-
 ## Ringkasan Operasi Bit
 
 Operator bit yang dipakai:
@@ -2264,27 +2232,3 @@ Output error yang diharapkan:
 ```text
 Ciphertext harus berupa hex valid.
 ```
-
-## Ringkasan Akhir
-
-Program ini dapat dipahami sebagai tiga lapisan:
-
-1. **Block cipher internal**
-   Mengubah 8 byte feedback menjadi 8 byte stream melalui Feistel 8 ronde.
-
-2. **Mode OFB**
-   Mengulang enkripsi feedback untuk menghasilkan keystream sepanjang input.
-
-3. **Antarmuka CLI**
-   Mengambil key, IV, plaintext, atau ciphertext hex dari argumen command line.
-
-Alur paling penting:
-
-```text
-key teks -> key 16 byte -> round_keys
-iv teks  -> iv 8 byte  -> feedback awal
-feedback -> encrypt_block -> stream
-input    -> XOR stream -> output
-```
-
-Enkripsi dan dekripsi memakai fungsi OFB yang sama karena XOR dengan stream yang sama dapat membalik hasil sebelumnya.
