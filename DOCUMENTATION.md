@@ -4,6 +4,27 @@ Dokumen ini menjelaskan program `OFB Cipher CLI` dari awal sampai akhir. Fokusny
 
 Program utama berada di file `main.c`. Proses build diatur oleh `Makefile`. Binary hasil build bernama `block_cipher`.
 
+## Tujuan Proyek
+
+Tujuan proyek ini adalah membuat program command line sederhana untuk menunjukkan cara kerja enkripsi dan dekripsi menggunakan mode `Output Feedback` (`OFB`) di bahasa C.
+
+Secara khusus, proyek ini bertujuan untuk:
+
+- Mengimplementasikan block cipher kustom sebagai pembangkit keystream.
+- Menunjukkan bagaimana mode `OFB` memakai `key` dan `IV` untuk menghasilkan keystream.
+- Menunjukkan bahwa enkripsi dan dekripsi pada `OFB` dapat memakai fungsi yang sama karena sama-sama berbasis operasi `XOR`.
+- Melatih pemrosesan data byte di C, termasuk buffer tetap, pointer, alokasi heap, dan konversi hexadecimal.
+- Menyediakan contoh uji yang bisa dijalankan langsung melalui command line.
+
+Ruang lingkup proyek:
+
+- Input diproses dari argumen command line.
+- Plaintext diperlakukan sebagai string teks biasa.
+- Ciphertext enkripsi ditampilkan sebagai hexadecimal.
+- Program dibuat untuk pembelajaran, bukan untuk keamanan produksi.
+
+Dengan kata lain, fokus utama proyek bukan membuat algoritma kriptografi baru yang siap dipakai secara nyata, melainkan memahami alur teknis block cipher, mode operasi `OFB`, operasi bit, dan pengelolaan data di C.
+
 ## Ringkasan Sistem
 
 Program ini menyediakan enkripsi dan dekripsi teks melalui command line. Mode operasi yang dipakai adalah `Output Feedback` atau `OFB`.
@@ -189,6 +210,14 @@ Format dekripsi:
 ./block_cipher dec <key16> <iv8> <ciphertext_hex>
 ```
 
+Catatan nama argumen:
+
+- `key16` berarti program memakai buffer key internal berukuran 16 byte.
+- `iv8` berarti program memakai buffer IV internal berukuran 8 byte.
+- Nama tersebut tidak berarti program menolak input yang panjangnya tidak tepat 16 atau 8 byte.
+- Jika input lebih pendek, sisa buffer diisi `0x00`.
+- Jika input lebih panjang, byte setelah batas ukuran akan diabaikan.
+
 Urutan argumen:
 
 | Indeks | Isi |
@@ -224,6 +253,8 @@ Jika plaintext memiliki spasi, plaintext perlu diapit tanda kutip agar shell men
 
 Argumen `key16` dibaca sebagai string C, lalu disalin ke buffer `key` berukuran 16 byte.
 
+Nama `key16` dipakai untuk menandai ukuran buffer internal. Program tidak melakukan validasi bahwa key harus tepat 16 karakter. Key pendek tetap diterima dan dipad dengan `0x00`, sedangkan key panjang tetap diterima tetapi hanya 16 byte pertama yang dipakai.
+
 Aturan:
 
 - Maksimal 16 byte pertama dipakai.
@@ -255,6 +286,8 @@ Byte setelah 16 byte pertama tidak dipakai.
 ### IV
 
 Argumen `iv8` dibaca sebagai string C, lalu disalin ke buffer `iv` berukuran 8 byte.
+
+Nama `iv8` dipakai untuk menandai ukuran buffer IV internal. Program tidak melakukan validasi bahwa IV harus tepat 8 karakter. IV pendek tetap diterima dan dipad dengan `0x00`, sedangkan IV panjang tetap diterima tetapi hanya 8 byte pertama yang dipakai.
 
 Aturan:
 
@@ -2177,12 +2210,43 @@ Fungsi memory/string:
 | `free` | Membebaskan buffer heap |
 | `fwrite` | Mencetak plaintext berdasarkan panjang byte |
 
+## Kesimpulan Teknis
+
+Program `OFB Cipher CLI` berhasil menunjukkan alur lengkap enkripsi dan dekripsi berbasis mode `OFB`.
+
+Kesimpulan utama:
+
+- Mode `OFB` mengubah block cipher menjadi generator keystream.
+- Plaintext atau ciphertext tidak diproses langsung oleh block cipher, tetapi di-XOR dengan keystream.
+- Enkripsi dan dekripsi memakai fungsi `ofb_crypt` yang sama karena sifat operasi `XOR`.
+- Panjang output sama dengan panjang input, sehingga padding tidak diperlukan.
+- Implementasi memakai jaringan Feistel 8 ronde sebagai block cipher kustom.
+- Key 16 byte dan IV 8 byte dipakai sebagai buffer internal; input pendek dipad nol dan input panjang dipotong.
+- Program sudah menangani beberapa kondisi error dasar, terutama jumlah argumen dan format ciphertext hex.
+
+Batasan utama:
+
+- Cipher yang dipakai adalah cipher kustom dan belum dianalisis secara kriptografis.
+- Program tidak menyediakan autentikasi, sehingga perubahan ciphertext tidak dapat dideteksi otomatis.
+- IV sebaiknya tidak dipakai ulang dengan key yang sama pada penggunaan OFB, karena reuse key dan IV dapat menghasilkan keystream yang sama.
+- Program cocok untuk demonstrasi konsep dan pembelajaran teknis, bukan sebagai pengganti pustaka kriptografi produksi.
+
 ## Checklist Verifikasi
 
-Build:
+Bagian ini berisi checklist yang bisa dipakai untuk memastikan program berjalan sesuai dokumentasi. Checklist ini juga berguna sebagai pegangan saat demo atau saat menjawab pertanyaan teknis.
+
+### Checklist Dasar
+
+Build program:
 
 ```bash
 make
+```
+
+Hasil yang diharapkan:
+
+```text
+block_cipher berhasil dibuat tanpa error kompilasi
 ```
 
 Enkripsi contoh 1 block:
@@ -2232,3 +2296,129 @@ Output error yang diharapkan:
 ```text
 Ciphertext harus berupa hex valid.
 ```
+
+### Checklist Tambahan
+
+Dekripsi dengan hex huruf kecil:
+
+```bash
+./block_cipher dec KUNCI-1NGG121S ADA123!! 343044a3cf442f1ab954b9c6
+```
+
+Output yang diharapkan:
+
+```text
+firdaus arif
+```
+
+Tujuan uji:
+
+```text
+Membuktikan parser hex menerima A-F dan a-f.
+```
+
+Input hex panjang ganjil:
+
+```bash
+./block_cipher dec KUNCI-1NGG121S ADA123!! ABC
+```
+
+Output error yang diharapkan:
+
+```text
+Ciphertext harus berupa hex valid.
+```
+
+Tujuan uji:
+
+```text
+Membuktikan ciphertext hex harus memiliki jumlah karakter genap.
+```
+
+Plaintext kosong:
+
+```bash
+./block_cipher enc KUNCI-1NGG121S ADA123!! ""
+```
+
+Output yang diharapkan:
+
+```text
+Hanya newline, tidak ada karakter hex.
+```
+
+Tujuan uji:
+
+```text
+Membuktikan input panjang 0 tetap aman diproses dan tidak menyebabkan error.
+```
+
+Key dan IV pendek:
+
+```bash
+./block_cipher enc abc iv "arif"
+```
+
+Output yang diharapkan:
+
+```text
+1D21FA5A
+```
+
+Tujuan uji:
+
+```text
+Membuktikan key pendek dan IV pendek diterima, lalu sisa buffer dipad dengan 0x00.
+```
+
+Key dan IV panjang:
+
+```bash
+./block_cipher enc 1234567890ABCDEFGHIJKLMNOP 1234567890 "arif"
+```
+
+Output yang diharapkan:
+
+```text
+40574999
+```
+
+Tujuan uji:
+
+```text
+Membuktikan key panjang hanya memakai 16 byte pertama dan IV panjang hanya memakai 8 byte pertama.
+```
+
+Round-trip enkripsi lalu dekripsi:
+
+```bash
+cipher=$(./block_cipher enc KUNCI-1NGG121S ADA123!! "firdaus arif")
+./block_cipher dec KUNCI-1NGG121S ADA123!! "$cipher"
+```
+
+Output yang diharapkan:
+
+```text
+firdaus arif
+```
+
+Tujuan uji:
+
+```text
+Membuktikan ciphertext hasil enkripsi bisa dikembalikan menjadi plaintext awal dengan key dan IV yang sama.
+```
+
+### Ringkasan Skenario Uji
+
+| Skenario | Hal yang Dibuktikan |
+| --- | --- |
+| Build | Program dapat dikompilasi dengan `Makefile` |
+| Enkripsi 1 block | Block parsial bisa diproses tanpa padding |
+| Enkripsi 2 block | Block penuh dan block parsial bisa diproses berurutan |
+| Dekripsi | `ofb_crypt` dapat membalik ciphertext menjadi plaintext |
+| Hex lowercase | Parser menerima `a-f` dan `A-F` |
+| Hex invalid | Parser menolak karakter non-hex |
+| Hex panjang ganjil | Parser menolak input yang tidak membentuk byte utuh |
+| Plaintext kosong | Alokasi kosong dan panjang 0 ditangani aman |
+| Key/IV pendek | Input pendek dipad dengan `0x00` |
+| Key/IV panjang | Input panjang dipotong sesuai ukuran buffer internal |
