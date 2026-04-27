@@ -4,6 +4,8 @@ OFB Cipher CLI adalah program command line berbasis bahasa C untuk enkripsi dan 
 
 Mode `OFB` menghasilkan keystream dari `IV` melalui proses enkripsi block cipher. Keystream tersebut di-XOR dengan plaintext untuk menghasilkan ciphertext, atau di-XOR dengan ciphertext untuk menghasilkan plaintext. Proses enkripsi dan dekripsi memakai alur komputasi yang sama.
 
+Untuk penjabaran kode `main.c` dan dokumentasi teknis yang lebih lengkap, lihat [`DOCUMENTATION.md`](DOCUMENTATION.md).
+
 ## Spesifikasi
 
 | Komponen | Nilai |
