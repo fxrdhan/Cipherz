@@ -26,23 +26,6 @@ Karakteristik utama:
 - Input dari `stdin`: tidak digunakan.
 - File input-output: tidak digunakan.
 
-## Struktur File
-
-```text
-.
-|-- DOCUMENTATION.md
-|-- Makefile
-|-- README.md
-`-- main.c
-```
-
-Penjelasan per file:
-
-- `main.c` berisi seluruh implementasi runtime, mulai dari primitive bit, block cipher, mode `OFB`, konversi hex, validasi argumen dasar, sampai fungsi `main`.
-- `Makefile` berisi target build untuk menghasilkan binary `block_cipher` dari `main.c`.
-- `README.md` berisi ringkasan penggunaan dan penjabaran kode dalam format lebih ringkas.
-- `DOCUMENTATION.md` berisi dokumentasi teknis detail untuk seluruh kode.
-
 ## Antarmuka Command Line
 
 Program memakai format perintah berikut:
